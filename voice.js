@@ -3,7 +3,7 @@
    simulator's own parser. Anything else goes to Claude, which answers as the bridge team using
    simulator tools. Each role speaks with its own Deepgram voice. */
 (function () {
-const K = { dg: 'bt.dgKey', cl: 'bt.claudeKey', model: 'bt.claudeModel', vLook: 'bt.vLook', vNav: 'bt.vNav', vHelm: 'bt.vHelm' };
+const K = { mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', model: 'bt.claudeModel', vLook: 'bt.vLook', vNav: 'bt.vNav', vHelm: 'bt.vHelm' };
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
 const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en' };
@@ -69,7 +69,13 @@ const VOICE = window.VOICE = {
   },
   async boot() {
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      const want = await pickMic();
+      const cons = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+      if (want) cons.deviceId = { exact: want };
+      try { this.stream = await navigator.mediaDevices.getUserMedia({ audio: cons }); }
+      catch (e) { if (want) { delete cons.deviceId; this.stream = await navigator.mediaDevices.getUserMedia({ audio: cons }); } else throw e; }
+      const tr = this.stream.getAudioTracks()[0]; this.micLabel = tr ? tr.label : '';
+      fillMics();
       const url = URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }));
       await this.ctx.audioWorklet.addModule(url);
       try { await this.ctx.resume(); } catch (e) { }
@@ -239,7 +245,7 @@ const VOICE = window.VOICE = {
     const bars = '\u2588'.repeat(lvl) + '\u2591'.repeat(8 - lvl);
     const stt = !this.stt ? 'off' : ['connecting', 'connected', 'closing', 'closed ' + (this.sttClose || '')][this.stt.readyState];
     const tts = ['lookout', 'nav', 'helm'].filter(r => this.tts[r] && this.tts[r].readyState === 1).length;
-    d.textContent = `Mic ${bars} · Audio ${this.ctx ? this.ctx.state : 'none'} · Ears ${stt} (${this.sent || 0} sent, ${this.msgs || 0} back) · Voices ${tts}/3${this.playing() ? ' · team talking' : ''}${this.muted ? ' · muted' : ''}`;
+    d.textContent = `Mic ${bars} (${(this.micLabel || '?').replace(/\s*\(.*?\)\s*/g, ' ').trim().slice(0, 28)}) · Audio ${this.ctx ? this.ctx.state : 'none'} · Ears ${stt} (${this.sent || 0} sent, ${this.msgs || 0} back) · Voices ${tts}/3${this.playing() ? ' · team talking' : ''}${this.muted ? ' · muted' : ''}`;
   },
 
   setMute(m) { this.muted = m; const b = el('bCallMute'); if (b) { b.setAttribute('aria-pressed', m); b.textContent = m ? 'Unmute' : 'Mute'; } if (this.active) this.status(m ? 'Call on · muted' : 'Call on · listening', 'ok'); },
@@ -275,6 +281,22 @@ function situation() {
   };
 }
 
+/* ---------- microphone choice ---------- */
+async function listMics() { try { return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications'); } catch (e) { return []; } }
+async function pickMic() {
+  const mics = await listMics(), saved = store.get(K.mic);
+  if (saved && mics.some(m => m.deviceId === saved)) return saved;
+  const built = mics.find(m => /built-?in|macbook|internal/i.test(m.label));
+  return built ? built.deviceId : '';
+}
+async function fillMics() {
+  const sel = el('inMic'); if (!sel) return;
+  const mics = await listMics(), cur = await pickMic();
+  sel.innerHTML = '';
+  if (!mics.length || !mics.some(m => m.label)) { const o = document.createElement('option'); o.value = ''; o.textContent = 'Default microphone (names appear after first use)'; sel.appendChild(o); return; }
+  for (const m of mics) { const o = document.createElement('option'); o.value = m.deviceId; o.textContent = m.label.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)/i, ''); if (m.deviceId === cur) o.selected = true; sel.appendChild(o); }
+}
+
 /* ---------- setup UI ---------- */
 function initUI() {
   const box = el('callSetup'); if (!box) return;
@@ -292,6 +314,8 @@ function initUI() {
   const sel = [['inModel', K.model], ['inVLook', K.vLook], ['inVNav', K.vNav], ['inVHelm', K.vHelm]];
   for (const [id, k] of sel) { const s = el(id); if (store.get(k)) s.value = store.get(k); s.onchange = () => store.set(k, s.value); }
   el('bCallMute').onclick = () => VOICE.setMute(!VOICE.muted);
+  fillMics(); el('inMic').onchange = () => store.set(K.mic, el('inMic').value);
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', fillMics);
   refresh();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initUI); else initUI();
