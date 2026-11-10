@@ -169,7 +169,7 @@ td.bad { color: var(--port); }
         <dt>WO</dt><dd>Come right to the westbound ITZ, 259</dd>
         <dt>Leg 2</dt><dd>3.8 nm west, anchorages to starboard, TSS to port</dd>
       </dl>
-      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. Lookout calls each new contact and waits for "OOW". Say "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then your helm order, e.g. "starboard ten, steer two five nine".</p>
+      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. Lookout calls each new contact and waits for "OOW"; nav then calls up with the follow-up. You then have 30 seconds for your sitrep ("Watch-on-deck, sitrep … Watch-on-deck") before the lookout reports the next contact. Say "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then your helm order, e.g. "starboard ten, steer two five nine".</p>
       <div class="opts">
         <div><div class="lbl">Light</div>
           <div class="seg" role="radiogroup" aria-label="Light">
@@ -609,6 +609,7 @@ const Q = []; let cur = null, phase = 'idle', ackTimer = null;
 function enqueue(item, front) { if (window.LIVE && LIVE.active) { LIVE.event(item); return; } front ? Q.unshift(item) : Q.push(item); pump(); }
 function say(who, text) { if (window.LIVE && LIVE.active) { LIVE.say(who, text); return; } enqueue({ who, call: false, body: () => text }, true); }
 function pump() {
+  if (S.sitrepOpen) return; // the OOW is talking; closeSitrep() restarts the queue
   if (typeof listening !== 'undefined' && listening && !handsFree) { setTimeout(pump, 400); return; }
   if (phase === 'await' && Q.length && !Q[0].call && S.running) { // answer a direct question while a call-up waits
     const it = Q.shift(); phase = 'aside'; clearTimeout(ackTimer);
@@ -631,10 +632,37 @@ function onAck(silent) {
   clearTimeout(ackTimer); phase = 'speaking'; cur.inBody = true;
   const b = cur.body(); speak(cur.who, b || 'nothing further', finish);
 }
-function finish() { cur = null; phase = 'idle'; setStatus(); setTimeout(pump, 350); }
+function finish() { const then = cur && cur.then; cur = null; phase = 'idle'; if (then) then(); setStatus(); setTimeout(pump, 350); }
+
+/* ---------- sitrep window: after lookout + nav, the OOW gets time to give a sitrep ---------- */
+const HOLD_S = 30, SITREP_QUIET_S = 8;
+function startHold() { S.holdLeft = HOLD_S; setStatus(); }
+function endHold(gap) { S.holdLeft = gap || 0; setStatus(); }
+const SITREP_RE = /\bsit\s?-?\s?reps?\b|\bsitrap\b|\bset rep\b/;
+const WOD_RE = /\bwatch\s?-?\s?on\s?-?\s?deck\b/;
+// Returns true when the words belong to a sitrep (logged, not acted on).
+function sitrepFilter(text) {
+  const t = text.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ').replace(/\s+/g, ' ');
+  const m = t.match(SITREP_RE);
+  if (!S.sitrepOpen && !m) return false;
+  if (S.sitrepOpen) { // a clear helm order ends a sitrep that never got its closing "watch-on-deck"
+    const cmds = parseCommand(text);
+    if (cmds.some(c => c.k === 'helm' || c.k === 'speed')) { closeSitrep(); return false; }
+  }
+  const after = m ? t.slice(m.index + m[0].length) : t;
+  if (!S.sitrepOpen) { S.sitrepOpen = true; S.holdLeft = Math.max(S.holdLeft || 0, HOLD_S); }
+  S.sitrepQuiet = SITREP_QUIET_S;
+  addLog('oow', text.trim());
+  if (WOD_RE.test(after)) closeSitrep();
+  setStatus();
+  return true;
+}
+function closeSitrep() { S.sitrepOpen = false; endHold(3); setTimeout(pump, 300); }
 function setStatus() {
   const el = $('await');
   if (phase === 'await' && cur) { el.textContent = ROLE[cur.who] + ' waiting for "OOW"'; el.hidden = false; $('bAck').classList.add('hot'); }
+  else if (S.sitrepOpen) { el.textContent = 'Sitrep · end with "watch-on-deck"'; el.hidden = false; $('bAck').classList.remove('hot'); }
+  else if (S.holdLeft > 3.5) { el.textContent = `Your sitrep · ${Math.ceil(S.holdLeft)} s`; el.hidden = false; $('bAck').classList.remove('hot'); }
   else { el.hidden = true; $('bAck').classList.remove('hot'); }
 }
 
@@ -643,6 +671,8 @@ const night = () => S.tod === 'night';
 function describe(c) { return night() && !c.anchored ? `${typeWords(c, true)} ${lightsWords(S.own, c)}, ${aspectWords(S.own, c)}` : `${typeWords(c, false)} ${aspectWords(S.own, c)}`; }
 function lookoutScan() {
   if ((cur && cur.who === 'lookout') || Q.some(q => q.who === 'lookout')) return;
+  if ((cur && cur.cycle) || Q.some(q => q.cycle)) return; // one contact at a time: lookout, nav, then the OOW's sitrep
+  if (S.sitrepOpen || S.holdLeft > 0) return;
   if ((window.LIVE && LIVE.active) && LIVE.busy('lookout')) return;
   const vis = VIS[S.tod];
   let best = null, bd = 1e9;
@@ -653,12 +683,17 @@ function lookoutScan() {
   }
   if (!best) return;
   best.reported = true;
-  enqueue({ who: 'lookout', call: true, body: () => {
+  enqueue({ who: 'lookout', call: true, cycle: true, body: () => {
     if (best.gone) return null;
     const ri = relInfo(S.own, best); S.lastReported = best; S.navTarget = best; best.firstRb = ri.rb; best.lastRb = ri.rb;
     best.lastDriftCls = driftShort(ri.drift).cls;
     return `${relWords(ri.rb)}, ${describe(best)}, ${driftWords(ri.drift, 'constant')}`;
-  } });
+  }, then: () => navFollowsLookout(best) });
+}
+// Nav follows up the contact the lookout just reported, then the OOW's sitrep window opens.
+function navFollowsLookout(c) {
+  if (!c || c.gone || !S.running) return;
+  enqueue({ who: 'nav', call: true, cycle: true, body: () => { if (c.gone) return null; S.navTarget = c; return navReport(); }, then: startHold }, true);
 }
 function lookoutBearing(c) {
   if (!c || c.gone) return 'not holding the contact';
@@ -739,6 +774,7 @@ function checkCourse(crs) {
 /* ---------- helm ---------- */
 function helmOrder(o) {
   const own = S.own;
+  if (S.holdLeft > 3) endHold(3); // the OOW has acted; the next report can follow shortly
   if (o.mid) { own.rud = 0; own.tgt = null; say('helm', 'Midships'); return; }
   if (o.steady) { own.tgt = Math.round(own.hdg) % 360; own.rud = 10 * Math.sign(own.rot || 1); own.dir = Math.sign(sdiff(own.tgt, own.hdg)) || 1; say('helm', `Steady, ${trueWords(own.tgt)}`); return; }
   let dir = o.side ? (o.side === 'starboard' ? 1 : -1) : (o.crs != null ? (Math.sign(sdiff(o.crs, own.hdg)) || 1) : 1);
@@ -768,6 +804,7 @@ function stepOwn(dt) { // dt seconds
 function handleUtterance(text, fromVoice) {
   if (window.VOICE && VOICE.active && !fromVoice) { VOICE.route(text); return; }
   if ((window.LIVE && LIVE.active) && !fromVoice) { LIVE.userText(text); return; }
+  if (sitrepFilter(text)) return;
   const cmds = parseCommand(text);
   if (!cmds.length) { addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
   if (!(cmds.length === 1 && cmds[0].k === 'ack')) addLog('oow', text);
@@ -1040,6 +1077,10 @@ let lastFrame = 0;
 function frame(ts) {
   const dt = lastFrame ? Math.min(0.25, (ts - lastFrame) / 1000) : 0; lastFrame = ts;
   if (S.running && !S.paused) { let left = dt * S.scale; while (left > 0) { const h = Math.min(0.1, left); simStep(h); left -= h; } }
+  if (S.running && !S.paused) { // sitrep clocks run in real seconds, whatever the sim speed
+    if (S.sitrepOpen) { S.sitrepQuiet -= dt; if (S.sitrepQuiet <= 0) closeSitrep(); }
+    else if (S.holdLeft > 0) { const was = Math.ceil(S.holdLeft); S.holdLeft = Math.max(0, S.holdLeft - dt); if (Math.ceil(S.holdLeft) !== was) setStatus(); }
+  }
   if (S.own) {
     const [vc, vw, vh] = fitCanvas($('view')); drawView(vc, vw, vh, ts);
     if (!$('plotWrap').hidden) { const [pc, pw, ph] = fitCanvas($('plot')); drawPlot(pc, pw, ph, false); }
@@ -1060,7 +1101,7 @@ function startDrill() {
   S.seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
   const sc = buildScenario(S.seed); S.contacts = sc.contacts; S.spawns = sc.spawns; S.rand = sc.rand;
   S.own = { x: START[0], y: START[1], hdg: 180, spd: 12, tgtSpd: 12, rud: 0, rot: 0, tgt: null, dir: 1 };
-  Object.assign(S, { t: 0, lastReported: null, navTarget: null, trigger: null, cues: { oneMin: false, wo: false }, look: 0, ownTrail: [], maxXte: 0, ended: false, past: [] });
+  Object.assign(S, { t: 0, lastReported: null, navTarget: null, trigger: null, cues: { oneMin: false, wo: false }, look: 0, ownTrail: [], maxXte: 0, ended: false, past: [], holdLeft: 0, sitrepOpen: false, sitrepQuiet: 0 });
   Q.length = 0; cur = null; phase = 'idle'; $('log').innerHTML = '';
   $('start').hidden = true; $('debrief').hidden = true; $('app').hidden = false;
   S.running = true; setPaused(false); setScale(1);
@@ -1166,6 +1207,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=f9e78a53"></script>
+<script src="voice.js?v=sitrep1"></script>
 </body>
 </html>
