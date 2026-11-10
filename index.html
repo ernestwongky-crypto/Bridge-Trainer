@@ -1067,8 +1067,7 @@ function startDrill() {
   if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch (e) { } }
   if (window.LIVE && LIVE.wanted()) { LIVE.start(); return; }
   if (window.VOICE && VOICE.wanted()) VOICE.start();
-  speak('sys', 'Drill start. Own ship course one eight zero, twelve knots.', () => { });
-  setTimeout(pump, 2500);
+  enqueue({ who: 'sys', call: false, body: () => 'Drill start. Own ship course one eight zero, twelve knots.' }, true);
 }
 function endDrill() {
   if (window.LIVE) LIVE.stop();
@@ -1167,6 +1166,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=5ad32143"></script>
+<script src="voice.js?v=f9e78a53"></script>
 </body>
 </html>

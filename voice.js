@@ -202,10 +202,13 @@ const VOICE = window.VOICE = {
     ws.onmessage = e => {
       if (typeof e.data === 'string') {
         let m; try { m = JSON.parse(e.data); } catch (err) { return; }
-        if (m.type === 'Flushed') { const it = ws.pending.shift(); if (it) { clearTimeout(it.guard); const wait = Math.max(0, (this.playEnd - this.ctx.currentTime) * 1000) + 120; setTimeout(it.done, wait); } }
+        if (m.type === 'Flushed') {
+          const it = ws.pending.shift(), parts = ws.parts || []; ws.parts = []; ws.carry = null;
+          if (it) { clearTimeout(it.guard); this.playUtterance(parts, it.done); }
+        }
         return;
       }
-      this.playPCM(e.data, ws);
+      (ws.parts = ws.parts || []).push(e.data);
     };
     ws.onclose = () => { ws.ok = false; ws.pending.splice(0).forEach(it => { clearTimeout(it.guard); it.done(); }); if (this.active) setTimeout(() => this.active && this.openTTS(who), 800); };
     this.tts[who] = ws;
@@ -225,17 +228,21 @@ const VOICE = window.VOICE = {
     this.browserSpeaking = true; u.onend = fin; u.onerror = fin; setTimeout(fin, 2500 + text.length * 110);
     speechSynthesis.speak(u);
   },
-  playPCM(ab, ws) {
-    let u8 = new Uint8Array(ab);
+  playUtterance(parts, done) {
+    // join the whole line first, so network gaps can't chop it up
+    let n = 0; for (const p of parts) n += p.byteLength;
+    let u8 = new Uint8Array(n), o = 0; for (const p of parts) { u8.set(new Uint8Array(p), o); o += p.byteLength; }
     if (u8.length >= 44 && u8[0] === 82 && u8[1] === 73 && u8[2] === 70 && u8[3] === 70) u8 = u8.subarray(44);
-    if (ws.carry) { const m = new Uint8Array(ws.carry.length + u8.length); m.set(ws.carry); m.set(u8, ws.carry.length); u8 = m; ws.carry = null; }
-    if (u8.length % 2) { ws.carry = u8.slice(u8.length - 1); u8 = u8.subarray(0, u8.length - 1); }
-    if (!u8.length) return;
+    if (u8.length % 2) u8 = u8.subarray(0, u8.length - 1);
+    if (!u8.length) { done(); return; }
     const pcm = new Int16Array(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.length));
     const buf = this.ctx.createBuffer(1, pcm.length, 24000), ch = buf.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+    // 6 ms fade in/out removes clicks at the edges
+    const f = Math.min(144, pcm.length >> 2); for (let i = 0; i < f; i++) { ch[i] *= i / f; ch[pcm.length - 1 - i] *= i / f; }
     const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
-    const t = Math.max(this.ctx.currentTime + 0.04, this.playEnd); s.start(t); this.playEnd = t + buf.duration;
+    const t = Math.max(this.ctx.currentTime + 0.05, this.playEnd + 0.12); s.start(t); this.playEnd = t + buf.duration;
+    setTimeout(done, (this.playEnd - this.ctx.currentTime) * 1000 + 80);
   },
   playing() { return !!this.browserSpeaking || (!!this.ctx && this.playEnd > 0 && this.playEnd + 0.35 > this.ctx.currentTime); },
   diag() {
