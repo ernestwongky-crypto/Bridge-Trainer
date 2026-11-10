@@ -7,7 +7,7 @@ const K = { ear: 'bt.ear', mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', mo
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
 const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en' };
-const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention'];
+const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good'];
 const QUESTIONY = /\b(what|which|where|when|why|how|who|say again|repeat|confirm|any|anything|is|are|was|do|does|did|can|could|should|tell|give me|report|status|picture|closest|nearest|time to|ahead of|behind)\b/;
 
 const WORKLET = `class Cap extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=0;this.buf=new Int16Array(1600);this.n=0;this.on=true;this.port.onmessage=e=>{this.on=e.data}}
