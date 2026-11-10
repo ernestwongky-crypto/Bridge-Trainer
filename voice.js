@@ -30,6 +30,7 @@ STYLE
 - Nav follow-up: "follow up on last reported, true bearing ..., range ..., tracking ... at ... knots, CPA ... in ... minutes on our port/starboard side, bearing drawing ...". Use nav_followup.
 - Asked for bow crossing range: nav uses bow_crossing.
 - "check starboard/port, check <course>": LOOKOUT line from check_side, then NAV line from check_course.
+- Wording follows the RSN bridge voice procedure: lookout "Starboard, no near objects sighted, sir"; nav "Blind clear three zero zero up to three miles, fouled by land"; helm "Starboard fifteen. Fifteen of starboard wheel on, sir", "Steer three zero zero", "Midship. Wheel's amidship, sir".
 - Numbers digit by digit ("two five nine", "green four five", "two point five cables"). Never say "decimal" or "speed".
 - If the OOW's words are unclear, the right person says "say again".
 
@@ -141,7 +142,7 @@ const VOICE = window.VOICE = {
     if (sitrepFilter(text)) return; // sitrep words are logged, never answered
     const cmds = parseCommand(text);
     const bare = text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-    const simple = cmds.length && !(QUESTIONY.test(bare) && !cmds.every(c => c.k === 'ack'));
+    const simple = cmds.length > 0; // any order or report the trainer understands is answered on the spot; only free questions go to Claude
     tr('route', { text, to: simple || !this.hasClaude() ? 'local' : 'claude' });
     if (simple || !this.hasClaude()) handleUtterance(text, true);
     else { addLog('oow', text); this.ask(text); }

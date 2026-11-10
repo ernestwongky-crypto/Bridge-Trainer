@@ -170,7 +170,7 @@ td.bad { color: var(--port); }
         <dt>WO</dt><dd>Come right to the westbound ITZ, 259</dd>
         <dt>Leg 2</dt><dd>3.8 nm west, anchorages to starboard, TSS to port</dd>
       </dl>
-      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until you give a helm order, or a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then your helm order, e.g. "starboard ten, steer two five nine".</p>
+      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm: "Course …"), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then your helm order, e.g. "starboard ten, steer two five nine".</p>
       <div class="opts">
         <div><div class="lbl">Light</div>
           <div class="seg" role="radiogroup" aria-label="Light">
@@ -518,6 +518,8 @@ function normalise(raw) {
   t = t.replace(/\b(o\s?o\s?w|o w|oh oh (?:w|double you)|o o double you|oww|ow|oow)\b/g, ' oow ');
   t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b|\bcheck star\b/g, m => m === 'check star' ? 'check starboard' : 'starboard');
   t = t.replace(/\b(navy|naff|nab|nev|knav|navigator|neff)\b/g, 'nav');
+  t = t.replace(/\b(pcr|pc are|bc are|b c r|bee see are|bcrs)\b/g, 'bcr');
+  t = t.replace(/\bcheck (stun|stan|stem|stern)\b/g, 'check stern');
   const toks = t.trim().split(/\s+/).map(w => (w in NUMW ? String(NUMW[w]) : w));
   // merge "20 5" -> 25 (tens + unit)
   const m1 = [];
@@ -538,7 +540,7 @@ function parseCommand(raw) {
   if (/\boow\b/.test(t)) out.push({ k: 'ack' });
   if (/\b(pause|freeze)\b/.test(t)) out.push({ k: 'pause' });
   if (/\b(resume|unfreeze|continue)\b/.test(t)) out.push({ k: 'resume' });
-  for (const side of t.matchAll(/check (port|starboard)/g)) out.push({ k: 'checkSide', side: side[1] }); // "check port, check starboard" answers both
+  for (const side of t.matchAll(/check (port|starboard|stern)/g)) out.push({ k: 'checkSide', side: side[1] }); // "check port, check starboard" answers both
   const cc = t.match(/check (?:course )?(\d{3})\b/); if (cc) out.push({ k: 'checkCourse', crs: +cc[1] % 360 });
   if (/\b(lookout|look out)\b/.test(t) || /\bbearing (movement|drift|check)\b/.test(t)) { const fu = t.match(/\b(green|red) (\d{1,3})\b/); out.push({ k: 'look', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null }); }
   if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t)) {
@@ -671,7 +673,7 @@ function afterClosingWOD(raw, skipLead) {
 function sitrepFilter(text) {
   const t = norm(text);
   if (/\bcarry on\b/.test(t) && S.loop) { addLog('oow', text.trim()); S.sitrepOpen = false; closeLoop(); return true; }
-  if (/^(roger|rodger|copy|noted|aye)\b/.test(t) && !S.sitrepOpen) { // an acknowledgement: logged, never answered
+  if (/^(roger|rodger|copy|noted|aye|very good|understood|okay|ok)\b/.test(t) && !S.sitrepOpen) { // an acknowledgement: logged, never answered
     const cmds0 = parseCommand(text.replace(/^\s*\w+[\s,.]*/, '')).filter(c => c.k !== 'ack');
     if (!cmds0.length && !SITREP_RE.test(t) && !WOD_RE.test(t)) { addLog('oow', text.trim()); return true; }
   }
@@ -679,8 +681,12 @@ function sitrepFilter(text) {
   let opening = false;
   if (!S.sitrepOpen) {
     const inLoop = S.loop && S.loop.stage === 'oow';
-    const opens = SITREP_RE.test(t) || /^watch\s?-?\s?on\s?-?\s?deck\b/.test(t) || (inLoop && !cmds.length && !QUESTION_START.test(t));
-    if (!opens) return false;
+    const opens = SITREP_RE.test(t) || /^watch\s?-?\s?on\s?-?\s?deck\b/.test(t);
+    if (!opens) {
+      // other words during an open loop that are neither an order nor a question: logged only, so the team doesn't talk over you
+      if (inLoop && !cmds.length && !QUESTION_START.test(t) && !/\?/.test(text)) { addLog('oow', text.trim()); return true; }
+      return false;
+    }
     S.sitrepOpen = true; S.sitrepText = ''; opening = true;
   } else if (cmds.length && !WOD_RE.test(t)) { closeSitrep(); return false; } // an order ends the sitrep and is acted on
   const rest = afterClosingWOD(text, opening);
@@ -782,15 +788,19 @@ function bcrReport() {
   if (b.kind === 'stern') return `we cross her stern, passing ${cableWords(b.dist)} astern of her`;
   return `bow crossing range ${cableWords(b.dist)}`;
 }
+// BVP: "Starboard, no near objects sighted, Sir." / "Stern, ..." (stern = red 30 through green 30 astern)
 function checkSide(side) {
   let best = null, bd = 2.0;
   for (const c of S.contacts) {
     if (c.gone || c.waiting) continue;
-    const ri = relInfo(S.own, c); const stbd = ri.rb > 2 && ri.rb < 178, port = ri.rb > 182 && ri.rb < 358;
-    if ((side === 'starboard' ? stbd : port) && ri.range < bd) { bd = ri.range; best = c; }
+    const ri = relInfo(S.own, c), rb = ri.rb;
+    const inSector = side === 'stern' ? rb > 150 && rb < 210 : side === 'starboard' ? rb > 2 && rb < 178 : rb > 182 && rb < 358;
+    if (inSector && ri.range < bd) { bd = ri.range; best = c; }
   }
-  if (!best) return 'not holding any nearby object';
-  return `${relWords(relInfo(S.own, best).rb)}, ${describe(best)}`;
+  const Side = side[0].toUpperCase() + side.slice(1);
+  if (!best) return `${Side}, no near objects sighted, sir`;
+  const ri = relInfo(S.own, best);
+  return `${Side}, ${relWords(ri.rb)}, ${describe(best)}, ${rangeWords(ri.range)}, sir`;
 }
 function landAhead(crs, dist) {
   const d = [Math.sin(crs * D2R) * dist, Math.cos(crs * D2R) * dist];
@@ -798,7 +808,8 @@ function landAhead(crs, dist) {
 }
 function checkCourse(crs) {
   const name = trueWords(crs);
-  if (landAhead(crs, 1.0)) return `${name} not clear on blind, land within one mile`;
+  const landAt = (() => { const d = [Math.sin(crs * D2R) * 6, Math.cos(crs * D2R) * 6]; const f = rayLand(S.own.x, S.own.y, d[0], d[1]); return f <= 1 ? f * 6 : null; })();
+  if (landAt != null && landAt < 1.0) return `Blind fouled ${name}, land at ${rangeWords(landAt)}`;
   let worst = null;
   for (const c of S.contacts) {
     if (c.gone || c.waiting) continue;
@@ -806,22 +817,26 @@ function checkCourse(crs) {
     const ri = cpaOnCourse(S.own, c, crs);
     if (ri.tcpa > 0 && ri.tcpa < 20 && ri.cpa < 0.25 && (!worst || ri.cpa < worst.ri.cpa)) worst = { c, ri };
   }
-  if (!worst) return `${name} clear on blind`;
+  if (!worst) return landAt != null ? `Blind clear ${name} up to ${rangeWords(landAt)}, fouled by land` : `Blind clear ${name}`;
   const now = relInfo(S.own, worst.c);
-  return `${name} not clear on blind, ${relWords(now.rb)} ${typeWords(worst.c, night())}, CPA ${cableWords(worst.ri.cpa)}`;
+  return `Blind fouled ${name}, ${relWords(now.rb)} ${typeWords(worst.c, night())}, CPA ${cableWords(worst.ri.cpa)}`;
 }
 
 /* ---------- helm ---------- */
 function helmOrder(o) {
   const own = S.own;
-  closeLoop(); // the OOW has acted on the contact; the next report can follow
-  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', 'Midships'); return; }
+  // The loop on a contact stays open through a turn (rudder, midship) and closes once the ship is
+  // steady on the ordered course (helm: "Course ..."), or at once for a "steady" order.
+  if (S.loop) { if (o.steady) closeLoop(); else if (o.crs != null) S.loop.awaitSteady = true; }
+  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', "Midship. Wheel's amidship, sir"); return; }
   if (o.steady) { own.tgt = Math.round(own.hdg) % 360; own.rud = 10 * Math.sign(own.rot || 1); own.dir = Math.sign(sdiff(own.tgt, own.hdg)) || 1; say('helm', `Steady, ${trueWords(own.tgt)}`); return; }
   let dir = o.side ? (o.side === 'starboard' ? 1 : -1) : (o.crs != null ? (Math.sign(sdiff(o.crs, own.hdg)) || 1) : 1);
   const mag = o.rud != null ? o.rud : 10;
   own.rud = dir * mag; own.tgt = o.crs; own.dir = dir; own.steadyCalled = false;
   const sw = dir > 0 ? 'Starboard' : 'Port';
-  say('helm', o.crs != null ? `${sw} ${mag === 0 ? 'ten' : digitsOrWords(mag)}, steer ${trueWords(o.crs)}` : `${sw} ${digitsOrWords(mag)}`);
+  const mw = digitsOrWords(mag), sl = sw.toLowerCase();
+  // BVP: "Starboard 15. 15 of starboard wheel on, Sir." / "Steer 300." (then "Course 300." once on it)
+  say('helm', o.crs == null ? `${sw} ${mw}. ${mw[0].toUpperCase() + mw.slice(1)} of ${sl} wheel on, sir` : o.side ? `${sw} ${mw}, steer ${trueWords(o.crs)}` : `Steer ${trueWords(o.crs)}`);
 }
 const digitsOrWords = n => ({ 5: 'five', 10: 'ten', 15: 'fifteen', 20: 'twenty', 25: 'twenty five', 30: 'thirty', 35: 'thirty five' })[n] || digits(n);
 function stepOwn(dt) { // dt seconds
@@ -832,7 +847,7 @@ function stepOwn(dt) { // dt seconds
     if (Math.abs(rem) > 15 && Math.sign(rem) !== o.dir) rem = o.dir > 0 ? n360(o.tgt - o.hdg) : -n360(o.hdg - o.tgt);
     const lim = k * Math.abs(o.rud || 10);
     desired = Math.max(-lim, Math.min(lim, rem * 0.35));
-    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; const t = o.tgt; o.tgt = null; say('helm', `Steady, ${trueWords(t)}`); }
+    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; const t = o.tgt; o.tgt = null; say('helm', `Course ${trueWords(t)}`); if (S.loop && S.loop.awaitSteady) closeLoop(); }
   } else desired = k * o.rud;
   o.rot += (desired - o.rot) * Math.min(1, dt / 3);
   o.hdg = n360(o.hdg + o.rot * dt);
@@ -1257,6 +1272,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=stream1"></script>
+<script src="voice.js?v=bvp2"></script>
 </body>
 </html>
