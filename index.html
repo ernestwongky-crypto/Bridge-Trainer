@@ -108,6 +108,24 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .plothead { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
 .plothead .seg2 { display: flex; gap: 4px; } .plothead .seg2 button { padding: 4px 8px; font-size: 12px; }
 
+/* call mode */
+.callsetup { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: grid; gap: 10px; background: var(--panel2); }
+.calltoggle { display: flex; gap: 10px; align-items: flex-start; }
+.calltoggle input { margin-top: 4px; }
+.keyrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+.keyrow input, .keyrow2 select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-width: 0; }
+.keyrow2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.keyrow2 #keyState { flex: 1 1 auto; }
+.linkbtn { background: none; border: none; color: var(--muted); text-decoration: underline; padding: 4px; }
+.callsetup a { color: var(--nav); }
+.callrow { display: none; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+body.incall .callrow { display: grid; }
+body.incall .microw, body.incall #micNote { display: none; }
+.callpill { font-weight: 700; padding: 10px 12px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); }
+.callpill.ok { color: var(--stbd); border-color: var(--stbd); }
+.callpill.wait { color: var(--accent); border-color: var(--accent); }
+.callpill.bad { color: var(--port); border-color: var(--port); }
+
 /* contacts */
 .cbox { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .cbox header { padding: 7px 12px; border-bottom: 1px solid var(--line); }
@@ -155,8 +173,22 @@ td.bad { color: var(--port); }
           </div></div>
         <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="optVoice" checked> Spoken reports</label>
       </div>
+      <div id="callSetup" class="callsetup" hidden>
+        <label class="calltoggle"><input type="checkbox" id="optCall" disabled> <span><b>Voice call</b> · talk naturally, no Talk button (Gemini)</span></label>
+        <div class="keyrow">
+          <input id="inKey" type="password" autocomplete="off" placeholder="Paste Gemini API key" aria-label="Gemini API key">
+          <button id="bSaveKey" type="button">Save key</button>
+        </div>
+        <div class="keyrow2">
+          <span id="keyState" class="note"></span>
+          <label class="note" for="inVoice">Voice</label>
+          <select id="inVoice"><option>Charon</option><option>Fenrir</option><option>Orus</option><option>Puck</option><option>Kore</option></select>
+          <button id="bClearKey" type="button" class="linkbtn">Remove key</button>
+        </div>
+        <p class="note">Get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. It is stored only in this browser and sent only to Google. Earphones give the cleanest call.</p>
+      </div>
       <button id="bStart">Start drill</button>
-      <p class="note"><b>Voice orders:</b> press Talk (or the space bar on a laptop) and allow the microphone when asked. Hands-free keeps the mic open for the whole drill and pauses it while the bridge team speaks. If Talk doesn’t work on your phone, tap the order box and use the keyboard’s dictation mic, then Send.</p>
+      <p class="note"><b>Voice orders:</b> with Voice call on, just talk. Without it, press Talk (or the space bar on a laptop); Hands-free keeps the mic open and pauses it while the team speaks.</p>
       <p class="note">Traffic is different every run. Geography is approximate, traced from a public MPA chart, and not for navigation.</p>
     </div>
   </section>
@@ -203,6 +235,7 @@ td.bad { color: var(--port); }
             <button id="bHands" aria-pressed="false" title="Keep the mic open">Hands-free</button>
           </div>
           <p id="micNote" hidden></p>
+          <div class="callrow"><span id="callPill" class="callpill" hidden></span><button id="bCallMute" aria-pressed="false">Mute</button></div>
           <div class="sect"><span class="lbl">Calls</span>
             <div class="grid5">
               <button id="bAck">OOW</button><button id="bNav">Nav</button><button id="bBcr">BCR</button>
@@ -564,8 +597,8 @@ function speak(who, text, cb) {
 
 /* ---------- bridge team queue ---------- */
 const Q = []; let cur = null, phase = 'idle', ackTimer = null;
-function enqueue(item, front) { front ? Q.unshift(item) : Q.push(item); pump(); }
-function say(who, text) { enqueue({ who, call: false, body: () => text }, true); }
+function enqueue(item, front) { if (window.LIVE && LIVE.active) { LIVE.event(item); return; } front ? Q.unshift(item) : Q.push(item); pump(); }
+function say(who, text) { if (window.LIVE && LIVE.active) { LIVE.say(who, text); return; } enqueue({ who, call: false, body: () => text }, true); }
 function pump() {
   if (typeof listening !== 'undefined' && listening && !handsFree) { setTimeout(pump, 400); return; }
   if (phase === 'await' && Q.length && !Q[0].call && S.running) { // answer a direct question while a call-up waits
@@ -601,6 +634,7 @@ const night = () => S.tod === 'night';
 function describe(c) { return night() && !c.anchored ? `${typeWords(c, true)} ${lightsWords(S.own, c)}, ${aspectWords(S.own, c)}` : `${typeWords(c, false)} ${aspectWords(S.own, c)}`; }
 function lookoutScan() {
   if ((cur && cur.who === 'lookout') || Q.some(q => q.who === 'lookout')) return;
+  if ((window.LIVE && LIVE.active) && LIVE.busy('lookout')) return;
   const vis = VIS[S.tod];
   let best = null, bd = 1e9;
   for (const c of S.contacts) {
@@ -723,6 +757,7 @@ function stepOwn(dt) { // dt seconds
 
 /* ---------- command handling ---------- */
 function handleUtterance(text, fromVoice) {
+  if ((window.LIVE && LIVE.active) && !fromVoice) { LIVE.userText(text); return; }
   const cmds = parseCommand(text);
   if (!cmds.length) { addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
   if (!(cmds.length === 1 && cmds[0].k === 'ack')) addLog('oow', text);
@@ -1020,10 +1055,12 @@ function startDrill() {
   $('start').hidden = true; $('debrief').hidden = true; $('app').hidden = false;
   S.running = true; setPaused(false); setScale(1);
   if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch (e) { } }
+  if (window.LIVE && LIVE.wanted()) { LIVE.start(); return; }
   speak('sys', 'Drill start. Own ship course one eight zero, twelve knots.', () => { });
   setTimeout(pump, 2500);
 }
 function endDrill() {
+  if (window.LIVE) LIVE.stop();
   S.ended = true; S.running = false; setPaused(true); clearTimeout(ackTimer); if ('speechSynthesis' in window) speechSynthesis.cancel();
   $('debrief').hidden = false;
   const rows = S.contacts.concat(S.past).filter((c, i, a) => a.indexOf(c) === i && c.firstRb != null && c.minR != null).sort((a, b) => a.minRt - b.minRt);
@@ -1118,5 +1155,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
+<script type="module" src="live.js"></script>
 </body>
 </html>
