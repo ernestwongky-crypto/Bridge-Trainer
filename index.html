@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0f13">
+</head>
+<body>
+<title>Changi Bridge Trainer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout: a night-bridge console. Lookout window on top, conning readouts, comms log, then the OOW's controls. Single dark look by design (bridge at night). */
+:root {
+  color-scheme: dark;
+  --bg: #0a0f13; --panel: #11181e; --panel2: #18222a; --line: #26333d;
+  --fg: #dfe7ea; --muted: #8394a0; --accent: #f2b544; --nav: #69c6e6; --stbd: #58d68d; --port: #ff6f61; --helm: #c8b3ff;
+  --plot-sea: #0d1a24; --plot-land: #3a3a2c; --plot-anch: #6f7f8c; --plot-limit: #a86ad9; --plot-tss: #5b6fa8; --plot-label: #b8c4cb;
+  --plot-ring: rgba(223,231,234,.14); --plot-contact: #dfe7ea; --plot-trail: rgba(105,198,230,.55);
+  --f-ui: "Saira Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-data: "Share Tech Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-ui); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 24px; }
+h1, h2 { font-weight: 700; letter-spacing: .02em; text-wrap: balance; margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 9px 12px; cursor: pointer; font-weight: 600; letter-spacing: .03em; touch-action: manipulation; }
+button:hover { border-color: #3d4d59; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { background: var(--accent); color: #1a1406; border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+.lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.wrap { max-width: 1180px; margin: 0 auto; }
+
+/* start */
+#start { display: grid; gap: 18px; max-width: 640px; margin: 4vh auto 0; }
+#start .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; }
+#start h1 { font-size: clamp(28px, 7vw, 40px); line-height: 1.05; }
+#start h1 small { display: block; font-size: 13px; color: var(--accent); letter-spacing: .18em; text-transform: uppercase; margin-bottom: 6px; }
+.legs { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-family: var(--f-data); font-size: 14px; }
+.legs dt { color: var(--accent); } .legs dd { margin: 0; color: var(--fg); }
+.opts { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { padding: 7px 12px; cursor: pointer; font-weight: 600; }
+.seg input:checked + label { background: var(--accent); color: #1a1406; }
+.seg input:focus-visible + label { outline: 2px solid var(--accent); }
+.note { color: var(--muted); font-size: 13px; max-width: 62ch; }
+#bStart { background: var(--accent); color: #1a1406; border-color: var(--accent); font-size: 17px; padding: 12px 20px; justify-self: start; }
+
+/* app */
+#app { display: grid; gap: 10px; }
+.topbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.topbar h1 { font-size: 18px; }
+.topbar .ctl { display: flex; gap: 6px; flex-wrap: wrap; }
+.topbar .ctl button { padding: 6px 10px; font-size: 13px; }
+.main { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .main { grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); align-items: start; } }
+.col { display: grid; gap: 10px; min-width: 0; }
+.viewbox { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #000; }
+#view { display: block; width: 100%; height: clamp(190px, 52vw, 420px); touch-action: none; cursor: grab; }
+.viewbar { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; justify-content: space-between; gap: 6px; pointer-events: none; }
+.viewbar > * { pointer-events: auto; }
+.viewbar button { background: rgba(10,15,19,.72); padding: 5px 9px; font-size: 12px; }
+.lookpill { background: rgba(10,15,19,.72); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; font-family: var(--f-data); font-size: 13px; align-self: center; }
+.conn { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.conn div { background: var(--panel); padding: 7px 10px; display: grid; gap: 1px; min-width: 0; }
+.conn b { font-family: var(--f-data); font-weight: 400; font-size: 22px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.conn .lbl { font-size: 10px; }
+@media (max-width: 480px) { .conn b { font-size: 17px; } .conn div { padding: 6px 7px; } }
+#await { background: var(--accent); color: #1a1406; font-weight: 700; padding: 6px 12px; border-radius: 6px; font-size: 14px; animation: blink 1.2s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { #await { animation: none; } }
+.logbox { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.logbox header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); gap: 8px; }
+#log { list-style: none; margin: 0; padding: 6px 0; overflow-y: auto; height: clamp(150px, 26vh, 300px); font-size: 14px; }
+#log li { display: grid; grid-template-columns: 44px 62px 1fr; gap: 6px; padding: 3px 12px; align-items: baseline; }
+#log li[tabindex] { cursor: pointer; } #log li[tabindex]:hover { background: var(--panel2); }
+#log .lt { font-family: var(--f-data); color: var(--muted); font-size: 12px; }
+#log .lw { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; }
+#log .lx { min-width: 0; overflow-wrap: anywhere; }
+.r-lookout .lw { color: var(--stbd); } .r-nav .lw { color: var(--nav); } .r-helm .lw { color: var(--helm); } .r-oow .lw { color: var(--accent); } .r-sys .lw { color: var(--muted); }
+.r-oow .lx { color: var(--accent); }
+
+.pad { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 12px; }
+.microw { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+#bMic { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 18px; padding: 14px; background: #1f2c36; }
+#bMic .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+#bMic.on { background: #3a1d1b; border-color: var(--port); } #bMic.on .dot { background: var(--port); box-shadow: 0 0 10px var(--port); }
+#micNote { color: var(--muted); font-size: 13px; margin: 0; }
+.grid5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.grid5 button { padding: 10px 4px; font-size: 14px; }
+#bAck { font-size: 16px; }
+#bAck.hot { background: var(--accent); color: #1a1406; border-color: var(--accent); }
+.rud { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.rud button { font-family: var(--f-data); font-weight: 400; font-size: 15px; padding: 9px 2px; }
+.rud .p { color: var(--port); } .rud .s { color: var(--stbd); }
+.order { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.order select, .order input { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-family: var(--f-data); min-width: 0; }
+#cmdForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+#cmd { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; min-width: 0; }
+.sect { display: grid; gap: 6px; }
+#plotWrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: grid; gap: 6px; }
+#plot { width: 100%; height: clamp(240px, 70vw, 380px); display: block; border-radius: 6px; }
+.plothead { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plothead .seg2 { display: flex; gap: 4px; } .plothead .seg2 button { padding: 4px 8px; font-size: 12px; }
+
+/* debrief */
+#debrief { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; margin-top: 12px; }
+#debrief h2 { font-size: 22px; }
+#dbPlot { width: 100%; height: clamp(260px, 60vw, 460px); display: block; border-radius: 6px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+td.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; text-align: right; } th.num { text-align: right; }
+td.bad { color: var(--port); }
+.dbbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+
+<div class="wrap">
+  <section id="start">
+    <div class="brief">
+      <h1><small>Bridge drill · Singapore Strait</small>Changi Bridge Trainer</h1>
+      <dl class="legs">
+        <dt>Start</dt><dd>South of the CNB knuckle, 180 at 12 kn</dd>
+        <dt>Leg 1</dt><dd>Through the Tanah Merah ferry corridor</dd>
+        <dt>WO</dt><dd>Come right to the westbound ITZ, 259</dd>
+        <dt>Leg 2</dt><dd>3.8 nm west, anchorages to starboard, TSS to port</dd>
+      </dl>
+      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. Lookout calls each new contact and waits for "OOW". Say "nav" for a follow-up, "nav bow crossing range", "check starboard, check zero one zero", then your helm order, e.g. "starboard ten, steer two five nine".</p>
+      <div class="opts">
+        <div><div class="lbl">Light</div>
+          <div class="seg" role="radiogroup" aria-label="Light">
+            <input type="radio" name="tod" id="tDay" value="day" checked><label for="tDay">Day</label>
+            <input type="radio" name="tod" id="tDusk" value="dusk"><label for="tDusk">Dusk</label>
+            <input type="radio" name="tod" id="tNight" value="night"><label for="tNight">Night</label>
+          </div></div>
+        <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="optVoice" checked> Spoken reports</label>
+      </div>
+      <button id="bStart">Start drill</button>
+      <p class="note"><b>Voice orders:</b> press Talk (or the space bar on a laptop) and allow the microphone when asked. Hands-free keeps the mic open for the whole drill. Needs an internet connection.</p>
+      <p class="note">Traffic is different every run. Geography is approximate, traced from a public MPA chart, and not for navigation.</p>
+    </div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="topbar">
+      <h1>Changi Bridge Trainer</h1>
+      <div class="ctl">
+        <button id="bPause" aria-pressed="false">Pause</button>
+        <button data-scale="1" aria-pressed="true">1×</button>
+        <button data-scale="2">2×</button>
+        <button data-scale="4">4×</button>
+        <button id="bEnd">End drill</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="col">
+        <div class="viewbox">
+          <canvas id="view" aria-label="Lookout view. Drag to look around."></canvas>
+          <div class="viewbar">
+            <button data-look="-30" aria-label="Look 30 degrees left">◀ 30</button>
+            <span class="lookpill">Looking <span id="hLook">Ahead</span></span>
+            <button data-look="0">Bow</button>
+            <button data-look="30" aria-label="Look 30 degrees right">30 ▶</button>
+          </div>
+        </div>
+        <div class="conn">
+          <div><span class="lbl">Head</span><b id="hHdg">180</b></div>
+          <div><span class="lbl">Ordered</span><b id="hOrd">—</b></div>
+          <div><span class="lbl">Rudder</span><b id="hRud">Mid</b></div>
+          <div><span class="lbl">Knots</span><b id="hSpd">12.0</b></div>
+          <div><span class="lbl">Time</span><b id="hClock">00:00</b></div>
+        </div>
+        <div class="logbox">
+          <header><span class="lbl">Bridge comms</span><span id="await" hidden></span></header>
+          <ul id="log" aria-live="polite"></ul>
+        </div>
+      </div>
+      <div class="col">
+        <div class="pad">
+          <div class="microw">
+            <button id="bMic"><i class="dot"></i><span>Talk</span></button>
+            <button id="bHands" aria-pressed="false" title="Keep the mic open">Hands-free</button>
+          </div>
+          <p id="micNote" hidden></p>
+          <div class="sect"><span class="lbl">Calls</span>
+            <div class="grid5">
+              <button id="bAck">OOW</button><button id="bNav">Nav</button><button id="bBcr">BCR</button>
+              <button id="bChkP">Chk port</button><button id="bChkS">Chk stbd</button>
+            </div></div>
+          <div class="sect"><span class="lbl">Wheel</span>
+            <div class="rud">
+              <button class="p" data-rud="-20">P20</button><button class="p" data-rud="-10">P10</button><button data-rud="0">Mid</button><button class="s" data-rud="10">S10</button><button class="s" data-rud="20">S20</button>
+            </div>
+            <div class="order">
+              <select id="inRud" aria-label="Wheel for the order"><option value="0">Auto</option><option value="port 10">P10</option><option value="port 20">P20</option><option value="starboard 10">S10</option><option value="starboard 20">S20</option></select>
+              <input id="inCrs" inputmode="numeric" maxlength="3" placeholder="Course" aria-label="Course">
+              <button id="bCheckCrs">Check</button><button id="bSteer">Steer</button>
+            </div></div>
+          <form id="cmdForm"><input id="cmd" autocomplete="off" placeholder="Type an order, e.g. nav follow up green 45" aria-label="Type an order"><button>Send</button></form>
+        </div>
+        <button id="bPlot" aria-pressed="false">Peek plot</button>
+        <div id="plotWrap" hidden>
+          <div class="plothead"><span class="lbl">Plot · north up</span>
+            <div class="seg2"><button data-range="1">1 nm</button><button data-range="2" aria-pressed="true">2 nm</button><button data-range="4">4 nm</button></div></div>
+          <canvas id="plot" aria-label="Top-down plot"></canvas>
+        </div>
+      </div>
+    </div>
+    <section id="debrief" hidden>
+      <h2>Drill plot</h2>
+      <p class="note" id="dbSum"></p>
+      <canvas id="dbPlot" aria-label="Plot of the whole drill with tracks"></canvas>
+      <div class="tablewrap"><table>
+        <thead><tr><th>First seen</th><th>Contact</th><th class="num">Closest (cables)</th><th class="num">Crossed her bow (cables)</th><th class="num">At</th></tr></thead>
+        <tbody id="dbRows"></tbody></table></div>
+      <p class="note">Red marks a pass inside 2.5 cables or a bow crossing under 8 cables.</p>
+      <div class="dbbtns"><button id="bAgain">New drill</button></div>
+    </section>
+  </section>
+</div>
+<script>
+/* ===== Engine: geometry, traffic, reports, parser (no DOM) ===== */
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const n360 = a => ((a % 360) + 360) % 360;
+const sdiff = (a, b) => { let d = n360(a - b); return d > 180 ? d - 360 : d; }; // a-b in (-180,180]
+const brg = (dx, dy) => n360(Math.atan2(dx, dy) * R2D);
+const vel = (c, s) => [s / 60 * Math.sin(c * D2R), s / 60 * Math.cos(c * D2R)]; // nm per min
+const hyp = Math.hypot;
+// chart pixel (MPA chart rendered at 100 dpi) -> local nm (origin 1°15'N 103°50'E, X east, Y north)
+const P = (fx, fy) => [(fx - 1894) / 112.4, -(fy - 1718) / 111.4];
+
+/* ---- Geography (approximate, traced from public MPA chart; not for navigation) ---- */
+const LAND = [
+  // Singapore mainland, East Coast to Changi
+  [[1300, 400], [3183, 400], [3183, 976], [3203, 1096], [3223, 1206], [3273, 1226], [3273, 1276], [3243, 1326],
+   [3213, 1321], [3173, 1276], [3113, 1281], [3063, 1294], [3013, 1298], [2973, 1281], [2913, 1276], [2863, 1281],
+   [2773, 1311], [2713, 1326], [2623, 1351], [2543, 1376], [2463, 1396], [2373, 1416], [2273, 1456], [2213, 1536],
+   [2150, 1545], [2050, 1560], [1950, 1545], [1850, 1560], [1700, 1570], [1500, 1560], [1300, 1550]].map(p => P(...p)),
+  [[1796, 1683], [1856, 1673], [1911, 1713], [1906, 1768], [1856, 1773], [1806, 1743]].map(p => P(...p)), // Sentosa
+  [[1966, 1890], [2010, 1880], [2040, 1900], [2030, 1925], [1975, 1920]].map(p => P(...p)), // St John's / Lazarus
+  [[1886, 1943], [1906, 1940], [1908, 1955], [1888, 1956]].map(p => P(...p)), // Sisters
+  [[3480, 700], [3500, 1000], [3700, 1040], [3950, 1000], [3950, 700]].map(p => P(...p)), // P. Tekong
+  [[2100, 2700], [2150, 2350], [2330, 2290], [2500, 2420], [2800, 2450], [3100, 2400], [3400, 2250], [3500, 2100],
+   [3610, 2025], [3700, 2050], [3950, 2030], [4100, 2100], [4100, 2700]].map(p => P(...p)) // Batam / Riau
+];
+const LAND_H = [70, 30, 25, 15, 25, 55]; // typical skyline height (m)
+const ANCH = [ // [name, x0, x1, y0, y1] nm
+  ['Eastern Bunkering B', 8.71, 11.6, 1.77, 2.58],
+  ['Eastern Bunkering C', 5.33, 8.89, 1.18, 1.63],
+  ['Eastern Special Purposes A', 6.48, 8.71, 1.68, 3.03],
+  ['Eastern Bunkering A', 12.76, 15.65, 2.35, 3.43]
+];
+const LANE_W = x => 0.15 + (x - 8.53) * 0.198;   // westbound lane centreline
+const LANE_E = x => LANE_W(x) - 1.3;             // eastbound lane centreline
+const PORT_LIMIT = x => LANE_W(x) + 0.87;
+const TMFT = [9.3, 3.7];
+const START = [11.73, 3.0], WP = [11.73, 1.45], LEG2 = 259;
+const END = [WP[0] + 3.8 * Math.sin(LEG2 * D2R), WP[1] + 3.8 * Math.cos(LEG2 * D2R)];
+const TRACK = [START, WP, END];
+
+/* ---- Vessel types ---- */
+const TYPES = {
+  ferry: { L: 35, B: 9, H: 9, name: 'ferry', small: false },
+  container: { L: 300, B: 45, H: 48, name: 'container ship' },
+  tanker: { L: 230, B: 40, H: 34, name: 'tanker' },
+  bulk: { L: 200, B: 32, H: 32, name: 'bulk carrier' },
+  carcarrier: { L: 200, B: 32, H: 44, name: 'car carrier' },
+  bunker: { L: 90, B: 16, H: 16, name: 'bunker tanker' },
+  tug: { L: 30, B: 10, H: 11, name: 'tug', small: true },
+  craft: { L: 14, B: 4, H: 4, name: 'small craft', small: true }
+};
+
+/* ---- Seeded random ---- */
+function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 1e6) / 1e6; }; }
+
+/* ---- Routes ---- */
+const R_MAIN_OUT = [[...TMFT, 8], [9.96, 3.38, 13], [11.73, 2.44, 14], [13.25, 1.45, 14], [14.05, 0.2, 28], [14.67, -1.42, 28], [14.9, -2.8, 28], [15.2, -6, 28]];
+const R_BINTAN_OUT = [[...TMFT, 8], [9.96, 3.38, 13], [11.73, 2.44, 14], [13.25, 1.45, 14], [15.5, 1.15, 28], [20, 0.6, 28]];
+const R_WEST_OUT = [[...TMFT, 8], [8.71, 2.62, 13], [8.83, 1.5, 14], [8.95, 0.6, 26], [9.3, -1.5, 26], [9.8, -6, 26]];
+const rev = (r, slowFrom) => { // inbound: fast until corridor, then slow
+  const o = r.slice().reverse().map(p => [p[0], p[1], 0]);
+  for (let i = 0; i < o.length; i++) o[i][2] = i < slowFrom ? 27 : (i === o.length - 1 ? 6 : 12);
+  return o;
+};
+const R_MAIN_IN = rev(R_MAIN_OUT, R_MAIN_OUT.length - 4);
+const R_WEST_IN = rev(R_WEST_OUT, R_WEST_OUT.length - 3);
+
+function routeLen(r) { let L = 0; for (let i = 1; i < r.length; i++) L += hyp(r[i][0] - r[i - 1][0], r[i][1] - r[i - 1][1]); return L; }
+// place a vessel a given distance along route
+function placeOnRoute(route, dist) {
+  let d = dist;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1], b = route[i], L = hyp(b[0] - a[0], b[1] - a[1]);
+    if (d <= L) { const f = d / L; return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, wp: i, course: brg(b[0] - a[0], b[1] - a[1]), speed: b[2] }; }
+    d -= L;
+  }
+  const z = route[route.length - 1]; return { x: z[0], y: z[1], wp: route.length - 1, course: 0, speed: 0 };
+}
+// distance along route from start to a point index
+function distTo(route, idx) { let L = 0; for (let i = 1; i <= idx; i++) L += hyp(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1]); return L; }
+
+let NEXT_ID = 1;
+function mkRoute(type, route, dist) {
+  const p = placeOnRoute(route, Math.max(0, dist));
+  return { id: NEXT_ID++, type, x: p.x, y: p.y, course: p.course, speed: p.speed, route, wp: p.wp, moving: true, trail: [] };
+}
+function mkStraight(type, x, y, course, speed) { return { id: NEXT_ID++, type, x, y, course, speed, moving: true, trail: [] }; }
+function mkAnchored(type, x, y, course) { return { id: NEXT_ID++, type, x, y, course, speed: 0, moving: false, anchored: true, trail: [] }; }
+
+/* ---- Scenario: realistic traffic for the CNB → westbound ITZ box ---- */
+function buildScenario(seed) {
+  NEXT_ID = 1;
+  const r = rng(seed), U = (a, b) => a + (b - a) * r(), pick = a => a[Math.floor(r() * a.length)];
+  const C = [];
+  // anchored vessels
+  const anchorCount = [5, 4, 3, 4];
+  ANCH.forEach((a, i) => { for (let k = 0; k < anchorCount[i]; k++) C.push(mkAnchored(pick(['tanker', 'bulk', 'bunker', 'tanker', 'container']), U(a[1] + .2, a[2] - .2), U(a[3] + .15, a[4] - .15), U(0, 360))); });
+  // own ship reaches the ferry crossing (Y 2.44) at ~2.8 min
+  const xMain = distTo(R_MAIN_OUT, 2);
+  const variant = r();
+  if (variant < 0.6) { // outbound ferry from starboard, give-way situation
+    const tCross = U(1.6, 4.2); C.push(mkRoute('ferry', pick([R_MAIN_OUT, R_BINTAN_OUT]), xMain - 14 * tCross / 60));
+    const t2 = U(5, 8); C.push(mkRoute('ferry', R_MAIN_IN, distTo(R_MAIN_IN, R_MAIN_IN.length - 3) - 12 * t2 / 60));
+  } else { // inbound ferry from port, then an outbound behind it
+    const t1 = U(2.0, 4.5); C.push(mkRoute('ferry', R_MAIN_IN, distTo(R_MAIN_IN, R_MAIN_IN.length - 3) - 12 * t1 / 60));
+    const t2 = U(5, 7.5); C.push(mkRoute('ferry', R_MAIN_OUT, xMain - 14 * t2 / 60));
+  }
+  // west corridor ferries meet the westbound leg around minute 18-24
+  C.push(mkRoute('ferry', R_WEST_OUT, distTo(R_WEST_OUT, 2) - 14 * U(16, 22) / 60 + 0.0));
+  if (r() < 0.7) C.push(mkRoute('ferry', R_WEST_IN, distTo(R_WEST_IN, R_WEST_IN.length - 3) - 12 * U(19, 25) / 60 - 27 * 0));
+  // bunker tanker leaving Eastern Bunkering B, crossing the ITZ southbound
+  { const tStart = U(6.5, 10.5); C.push({ ...mkRoute('bunker', [[10.4, 1.85, 7], [10.8, 0.3, 7], [16, LANE_E(16), 10]], 0), delay: tStart }); }
+  // tug in the ITZ eastbound, fine on the bow on the westbound leg
+  { const sp = U(7, 9), y0 = LANE_W(7) + 0.62 - U(0.05, 0.2); C.push(mkStraight('tug', 9.72 - sp * U(16, 20) / 60 * 0.98, y0, 79, sp)); }
+  // occasional small craft crossing
+  C.push({ ...mkStraight('craft', U(10.2, 11.0), U(0.6, 0.9), U(20, 40), U(14, 20)), delay: U(9, 14) });
+  // TSS traffic: preload + spawn schedule
+  const tss = ['container', 'tanker', 'bulk', 'carcarrier', 'container'];
+  for (let x = 6; x < 18; x += U(2.0, 3.4)) C.push(mkStraight(pick(tss), x, LANE_W(x) + U(-.2, .2), 259, U(11, 16)));
+  for (let x = 5; x < 17; x += U(2.0, 3.4)) C.push(mkStraight(pick(tss), x, LANE_E(x) + U(-.2, .2), 79, U(11, 16)));
+  const spawns = [];
+  for (let t = U(2, 6); t < 40; t += U(4, 8)) spawns.push({ t, kind: 'W', type: pick(tss), sp: U(11, 16) });
+  for (let t = U(2, 6); t < 40; t += U(4, 8)) spawns.push({ t, kind: 'E', type: pick(tss), sp: U(11, 16) });
+  for (let t = U(10, 14); t < 40; t += U(8, 13)) spawns.push({ t, kind: 'F', route: pick([R_MAIN_OUT, R_BINTAN_OUT, R_WEST_OUT]) });
+  for (let t = U(9, 13); t < 40; t += U(8, 13)) spawns.push({ t, kind: 'FI', route: pick([R_MAIN_IN, R_WEST_IN]) });
+  C.forEach(c => { if (c.delay) { c.waiting = true; } });
+  return { contacts: C, spawns, rand: r };
+}
+
+/* ---- Kinematics ---- */
+function stepContact(c, dtMin) {
+  if (!c.moving || c.waiting) return;
+  if (c.route) {
+    const tgt = c.route[c.wp];
+    if (!tgt) { c.gone = true; return; }
+    const dx = tgt[0] - c.x, dy = tgt[1] - c.y, d = hyp(dx, dy);
+    if (d < 0.03) { c.wp++; if (c.wp >= c.route.length) { c.gone = true; } return; }
+    const want = brg(dx, dy), rate = c.type === 'ferry' ? 180 : 40; // deg/min
+    const diff = sdiff(want, c.course);
+    c.course = n360(c.course + Math.max(-rate * dtMin, Math.min(rate * dtMin, diff)));
+    const acc = c.type === 'ferry' ? 25 : 4; // kn per min
+    const ts = tgt[2];
+    c.speed += Math.max(-acc * dtMin, Math.min(acc * dtMin, ts - c.speed));
+  }
+  const v = vel(c.course, c.speed); c.x += v[0] * dtMin; c.y += v[1] * dtMin;
+  if (c.x < -2 || c.x > 22 || c.y < -8 || c.y > 8) c.gone = true;
+}
+
+/* ---- Relative geometry ---- */
+function relInfo(own, c) {
+  const rx = c.x - own.x, ry = c.y - own.y, rng_ = hyp(rx, ry);
+  const vo = vel(own.hdg, own.spd), vc = vel(c.course, c.speed);
+  const vx = vc[0] - vo[0], vy = vc[1] - vo[1], vv = vx * vx + vy * vy;
+  let tcpa = vv < 1e-9 ? Infinity : -(rx * vx + ry * vy) / vv;
+  const tt = isFinite(tcpa) ? Math.max(0, tcpa) : 0;
+  const cx = rx + vx * tt, cy = ry + vy * tt, cpa = hyp(cx, cy);
+  const tb = brg(rx, ry), rb = n360(tb - own.hdg);
+  const b1 = brg(rx + vx, ry + vy), drift = sdiff(b1, tb); // deg per minute
+  const cpaSide = n360(brg(cx, cy) - own.hdg) < 180 ? 'starboard' : 'port';
+  return { range: rng_, tb, rb, tcpa, cpa, drift, cpaSide };
+}
+// CPA if own ship were on course `crs` at current speed
+function cpaOnCourse(own, c, crs) { return relInfo({ ...own, hdg: crs }, c); }
+// Bow crossing range: where own ship crosses the contact's track line ahead of her
+function bowCross(own, c) {
+  const u = [Math.sin(c.course * D2R), Math.cos(c.course * D2R)];
+  const vo = vel(own.hdg, own.spd), vc = vel(c.course, c.speed);
+  const px = own.x - c.x, py = own.y - c.y;
+  const cr = (a, b) => a[0] * b[1] - a[1] * b[0];
+  const den = cr(u, vo);
+  if (Math.abs(den) < 1e-6) return { kind: 'none' };
+  const t = -cr(u, [px, py]) / den;
+  if (t < 0) return { kind: 'none' };
+  const cx = own.x + vo[0] * t, cy = own.y + vo[1] * t;
+  const kx = c.x + vc[0] * t, ky = c.y + vc[1] * t;
+  const a = (cx - kx) * u[0] + (cy - ky) * u[1];
+  return { kind: a >= 0 ? 'bow' : 'stern', dist: Math.abs(a), t };
+}
+
+/* ---- Speech formatting ---- */
+const DIG = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+const digits = (n, w) => String(Math.round(n)).padStart(w || 0, '0').split('').map(d => DIG[+d]).join(' ');
+function relWords(rb) {
+  const r5 = Math.round(rb / 5) * 5 % 360;
+  if (r5 === 0) return 'right ahead';
+  if (r5 === 180) return 'right astern';
+  return r5 < 180 ? 'green ' + digits(r5, 2) : 'red ' + digits(360 - r5, 2);
+}
+const relShort = rb => { const r5 = Math.round(rb / 5) * 5 % 360; return r5 === 0 ? 'Ahead' : r5 === 180 ? 'Astern' : (r5 < 180 ? 'G' + r5 : 'R' + (360 - r5)); };
+const trueWords = b => digits(n360(Math.round(b)) % 360, 3);
+function rangeWords(nm) {
+  if (nm < 0.95) { const c = Math.max(1, Math.round(nm * 10)); return digits(c) + (c === 1 ? ' cable' : ' cables'); }
+  const v = Math.round(nm * 10) / 10; const [a, b] = v.toFixed(1).split('.');
+  return digits(+a) + (b !== '0' ? ' point ' + digits(+b) : '') + ' miles';
+}
+function cableWords(nm) {
+  const c = Math.round(nm * 10 * 2) / 2; // to half cable
+  if (c < 0.5) return 'zero';
+  const [a, b] = c.toFixed(1).split('.');
+  return (b === '5' ? digits(+a) + ' point five' : digits(+a)) + (c === 1 ? ' cable' : ' cables');
+}
+function aspectWords(own, c, night) {
+  if (c.anchored) return 'at anchor';
+  if (c.speed < 0.5) return 'stopped';
+  const h = own.hdg * D2R, f = [Math.sin(h), Math.cos(h)], s = [Math.cos(h), -Math.sin(h)];
+  const v = vel(c.course, c.speed), perp = v[0] * s[0] + v[1] * s[1], along = v[0] * f[0] + v[1] * f[1], sp = hyp(...v);
+  const rb = relInfo(own, c).rb;
+  if (Math.abs(perp) >= 0.45 * sp) return perp < 0 ? 'crossing right to left' : 'crossing left to right';
+  if (along < 0) return (rb < 20 || rb > 340) ? 'head on' : 'on opposite course';
+  return (c.speed < own.spd && (rb < 60 || rb > 300)) ? 'same direction, we are overtaking' : 'same direction';
+}
+function lightsWords(own, c) { // what the lookout sees at night
+  const obs = n360(brg(own.x - c.x, own.y - c.y) - c.course);
+  if (c.anchored) return 'showing anchor lights';
+  if (obs <= 112.5 && obs >= 0 && obs > 6) return 'showing green sidelight';
+  if (obs >= 247.5 && obs < 354) return 'showing red sidelight';
+  if (obs <= 6 || obs >= 354) return 'showing red and green';
+  return 'showing stern light';
+}
+function typeWords(c, night) { const T = TYPES[c.type]; if (!night) return T.name; return T.small ? 'small vessel' : (c.type === 'ferry' ? 'vessel' : 'large vessel'); }
+
+/* ---- Command parser ---- */
+const NUMW = { zero: 0, oh: 0, one: 1, won: 1, two: 2, three: 3, tree: 3, four: 4, five: 5, fife: 5, six: 6, seven: 7, eight: 8, nine: 9, niner: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50 };
+function normalise(raw) {
+  let t = ' ' + raw.toLowerCase().replace(/[,.;!?]/g, ' ').replace(/-/g, ' ') + ' ';
+  // ack variants before number conversion
+  t = t.replace(/\b(o\s?o\s?w|o w|oh oh (?:w|double you)|o o double you|oww|ow|oow)\b/g, ' oow ');
+  t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b/g, 'starboard');
+  t = t.replace(/\b(navy|naff|nab|nev|knav|navigator|neff)\b/g, 'nav');
+  const toks = t.trim().split(/\s+/).map(w => (w in NUMW ? String(NUMW[w]) : w));
+  // merge "20 5" -> 25 (tens + unit)
+  const m1 = [];
+  for (let i = 0; i < toks.length; i++) {
+    const a = toks[i], b = toks[i + 1];
+    if (/^[2-5]0$/.test(a) && /^[1-9]$/.test(b || '')) { m1.push(String(+a + +b)); i++; } else m1.push(a);
+  }
+  // merge runs of single digits: "0 1 0" -> "010"
+  const m2 = [];
+  for (let i = 0; i < m1.length; i++) {
+    if (/^\d$/.test(m1[i])) { let s = m1[i]; while (/^\d$/.test(m1[i + 1] || '')) s += m1[++i]; m2.push(s); } else m2.push(m1[i]);
+  }
+  // decimals "2 point 5"
+  return m2.join(' ').replace(/(\d+) point (\d+)/g, '$1.$2');
+}
+function parseCommand(raw) {
+  const t = ' ' + normalise(raw) + ' ', out = [];
+  if (/\boow\b/.test(t)) out.push({ k: 'ack' });
+  if (/\b(pause|freeze)\b/.test(t)) out.push({ k: 'pause' });
+  if (/\b(resume|unfreeze|continue)\b/.test(t)) out.push({ k: 'resume' });
+  const side = t.match(/check (port|starboard)/); if (side) out.push({ k: 'checkSide', side: side[1] });
+  const cc = t.match(/check (?:course )?(\d{3})\b/); if (cc) out.push({ k: 'checkCourse', crs: +cc[1] % 360 });
+  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t)) {
+    const trig = t.match(/(?:cpa )?trigger (?:at |of )?(\d+(?:\.\d+)?)/);
+    const fu = t.match(/\b(green|red) (\d{1,3})\b/);
+    if (/\bcancel\b.*trigger|trigger (?:off|cancel)/.test(t)) out.push({ k: 'trigger', val: null });
+    else if (trig) out.push({ k: 'trigger', val: +trig[1] });
+    else if (/bow crossing|\bbcr\b/.test(t)) out.push({ k: 'bcr', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null });
+    else out.push({ k: 'nav', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null, followUp: /follow/.test(t) });
+  }
+  const rud = t.match(/\b(port|starboard) (\d{1,2})\b/);
+  const steer = t.match(/\bsteer (\d{3})\b/) || t.match(/\bcourse (\d{3})\b(?!.*check)/);
+  if (/\bmid ?ships\b/.test(t)) out.push({ k: 'helm', rud: 0, mid: true });
+  else if (/\b(steady|meet her)\b/.test(t)) out.push({ k: 'helm', steady: true });
+  else if (rud || (steer && !cc)) out.push({ k: 'helm', side: rud ? rud[1] : null, rud: rud ? Math.min(35, +rud[2]) : null, crs: steer ? +steer[1] % 360 : null });
+  const sp = t.match(/(\d{1,2}(?:\.\d)?) knots/); if (sp && !/\bnav\b/.test(t)) out.push({ k: 'speed', v: Math.min(30, +sp[1]) });
+  return out;
+}
+
+if (typeof module !== 'undefined') module.exports = { normalise, parseCommand, relInfo, bowCross, relWords, rangeWords, cableWords, buildScenario, stepContact, aspectWords, END, TRACK, LANE_W, trueWords, cpaOnCourse };
+
+</script>
+<script>
+/* ===== App: sim loop, bridge team, voice, rendering ===== */
+const $ = id => document.getElementById(id);
+const S = {
+  own: null, contacts: [], spawns: [], t: 0, scale: 1, paused: true, running: false, tod: 'day',
+  voiceOut: true, lastReported: null, navTarget: null, trigger: null, cues: { oneMin: false, wo: false },
+  look: 0, log: [], ownTrail: [], maxXte: 0, ended: false, seed: 0, plotRange: 2
+};
+const VIS = { day: 3.2, dusk: 3.0, night: 2.6 };
+
+/* ---------- speech out ---------- */
+let VOICES = {};
+function pickVoices() {
+  if (!('speechSynthesis' in window)) return;
+  const v = speechSynthesis.getVoices().filter(x => /^en/i.test(x.lang));
+  const pref = l => v.filter(x => x.lang.replace('_', '-').toLowerCase().startsWith(l));
+  const pool = [...pref('en-gb'), ...pref('en-sg'), ...pref('en-au'), ...pref('en-us'), ...v];
+  const uniq = [...new Set(pool)];
+  VOICES = { lookout: uniq[0], nav: uniq[1] || uniq[0], helm: uniq[2] || uniq[0] };
+}
+if ('speechSynthesis' in window) { pickVoices(); speechSynthesis.onvoiceschanged = pickVoices; }
+const ROLE = { lookout: 'Lookout', nav: 'Nav', helm: 'Helm', oow: 'OOW', sys: 'Drill' };
+function speak(who, text, cb) {
+  addLog(who, text);
+  const done = (() => { let f = false; return () => { if (!f) { f = true; cb && cb(); } }; })();
+  if (!S.voiceOut || !('speechSynthesis' in window)) { setTimeout(done, 500 + text.length * 45); return; }
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    if (VOICES[who]) u.voice = VOICES[who];
+    u.rate = who === 'helm' ? 1.2 : 1.15; u.pitch = who === 'nav' ? 0.85 : who === 'helm' ? 1.1 : 1.0;
+    u.onend = done; u.onerror = done;
+    speechSynthesis.speak(u);
+    setTimeout(done, 1500 + text.length * 95);
+  } catch (e) { setTimeout(done, 500 + text.length * 45); }
+}
+
+/* ---------- bridge team queue ---------- */
+const Q = []; let cur = null, phase = 'idle', ackTimer = null;
+function enqueue(item, front) { front ? Q.unshift(item) : Q.push(item); pump(); }
+function say(who, text) { enqueue({ who, call: false, body: () => text }, true); }
+function pump() {
+  if (phase === 'await' && Q.length && !Q[0].call && S.running) { // answer a direct question while a call-up waits
+    const it = Q.shift(); phase = 'aside'; clearTimeout(ackTimer);
+    const b = it.body(); const back = () => { phase = 'await'; if (cur && cur.acked) { cur.acked = false; onAck(true); } else { armAck(); pump(); } };
+    if (b) speak(it.who, b, back); else back();
+    return;
+  }
+  if (phase !== 'idle' || !Q.length || !S.running) return;
+  cur = Q.shift();
+  if (cur.call) { phase = 'speaking'; speak(cur.who, 'OOW sir, ' + cur.who, afterCall); }
+  else { phase = 'speaking'; const b = cur.body(); if (!b) { finish(); return; } speak(cur.who, b, finish); }
+  setStatus();
+}
+function afterCall() { phase = 'await'; if (cur && cur.acked) { cur.acked = false; onAck(true); } else { armAck(); setStatus(); pump(); } }
+function armAck() { clearTimeout(ackTimer); ackTimer = setTimeout(() => { if (phase === 'await' && cur) { phase = 'speaking'; speak(cur.who, 'OOW sir, ' + cur.who, afterCall); } }, 9000); }
+function onAck(silent) {
+  if (!silent) addLog('oow', 'OOW');
+  if ((phase === 'aside' || (phase === 'speaking' && cur && cur.call && !cur.inBody)) && cur) { cur.acked = true; return; }
+  if (phase !== 'await' || !cur) return;
+  clearTimeout(ackTimer); phase = 'speaking'; cur.inBody = true;
+  const b = cur.body(); speak(cur.who, b || 'nothing further', finish);
+}
+function finish() { cur = null; phase = 'idle'; setStatus(); setTimeout(pump, 350); }
+function setStatus() {
+  const el = $('await');
+  if (phase === 'await' && cur) { el.textContent = ROLE[cur.who] + ' waiting for "OOW"'; el.hidden = false; $('bAck').classList.add('hot'); }
+  else { el.hidden = true; $('bAck').classList.remove('hot'); }
+}
+
+/* ---------- reports ---------- */
+const night = () => S.tod === 'night';
+function describe(c) { return night() && !c.anchored ? `${typeWords(c, true)} ${lightsWords(S.own, c)}, ${aspectWords(S.own, c)}` : `${typeWords(c, false)} ${aspectWords(S.own, c)}`; }
+function lookoutScan() {
+  if ((cur && cur.who === 'lookout') || Q.some(q => q.who === 'lookout')) return;
+  const vis = VIS[S.tod];
+  let best = null, bd = 1e9;
+  for (const c of S.contacts) {
+    if (!c.moving || c.waiting || c.reported || c.gone) continue;
+    const r = hyp(c.x - S.own.x, c.y - S.own.y);
+    if (r <= vis && r < bd) { best = c; bd = r; }
+  }
+  if (!best) return;
+  best.reported = true;
+  enqueue({ who: 'lookout', call: true, body: () => {
+    if (best.gone) return null;
+    const ri = relInfo(S.own, best); S.lastReported = best; S.navTarget = best; best.firstRb = ri.rb; best.lastRb = ri.rb;
+    return `${relWords(ri.rb)}, ${describe(best)}`;
+  } });
+}
+function findByRel(rel) {
+  let b = null, bd = 20;
+  for (const c of S.contacts) { if (c.gone || c.waiting) continue; const ri = relInfo(S.own, c); if (ri.range > 6) continue; const d = Math.abs(sdiff(ri.rb, rel)); if (d < bd) { bd = d; b = c; } }
+  return b;
+}
+function navReport() {
+  const c = S.navTarget;
+  if (!c || c.gone) return 'no contact held for follow up';
+  const ri = relInfo(S.own, c);
+  const head = c === S.lastReported ? 'follow up on last reported' : `follow up on ${relWords(ri.rb)}`;
+  let s = `${head}, true bearing ${trueWords(ri.tb)}, range ${rangeWords(ri.range)}, `;
+  s += c.speed < 0.5 ? 'stationary, ' : `tracking ${trueWords(c.course)} at ${Math.round(c.speed)} knots, `;
+  if (!isFinite(ri.tcpa) || ri.tcpa < 0) s += 'past CPA, opening';
+  else {
+    const m = Math.max(1, Math.round(ri.tcpa));
+    s += ri.cpa < 0.05 ? `CPA zero in ${m} minute${m > 1 ? 's' : ''}, collision course` : `CPA ${cableWords(ri.cpa)} in ${m} minute${m > 1 ? 's' : ''} on our ${ri.cpaSide} side`;
+    const a = Math.abs(ri.drift);
+    s += a < 0.4 ? ', bearing steady' : `, bearing drawing ${ri.drift > 0 ? 'right' : 'left'}${a < 2 ? ' slowly' : ''}`;
+  }
+  return s;
+}
+function bcrReport() {
+  const c = S.navTarget;
+  if (!c || c.gone) return 'no contact held';
+  const b = bowCross(S.own, c);
+  if (b.kind === 'none') return 'not crossing her track';
+  if (b.kind === 'stern') return `we cross her stern, passing ${cableWords(b.dist)} astern of her`;
+  return `bow crossing range ${cableWords(b.dist)}`;
+}
+function checkSide(side) {
+  let best = null, bd = 2.0;
+  for (const c of S.contacts) {
+    if (c.gone || c.waiting) continue;
+    const ri = relInfo(S.own, c); const stbd = ri.rb > 2 && ri.rb < 178, port = ri.rb > 182 && ri.rb < 358;
+    if ((side === 'starboard' ? stbd : port) && ri.range < bd) { bd = ri.range; best = c; }
+  }
+  if (!best) return 'not holding any nearby object';
+  return `${relWords(relInfo(S.own, best).rb)}, ${describe(best)}`;
+}
+function landAhead(crs, dist) {
+  const d = [Math.sin(crs * D2R) * dist, Math.cos(crs * D2R) * dist];
+  return rayLand(S.own.x, S.own.y, d[0], d[1]) < 1;
+}
+function checkCourse(crs) {
+  const name = trueWords(crs);
+  if (landAhead(crs, 1.0)) return `${name} not clear on blind, land within one mile`;
+  let worst = null;
+  for (const c of S.contacts) {
+    if (c.gone || c.waiting) continue;
+    if (hyp(c.x - S.own.x, c.y - S.own.y) > 6) continue;
+    const ri = cpaOnCourse(S.own, c, crs);
+    if (ri.tcpa > 0 && ri.tcpa < 20 && ri.cpa < 0.25 && (!worst || ri.cpa < worst.ri.cpa)) worst = { c, ri };
+  }
+  if (!worst) return `${name} clear on blind`;
+  const now = relInfo(S.own, worst.c);
+  return `${name} not clear on blind, ${relWords(now.rb)} ${typeWords(worst.c, night())}, CPA ${cableWords(worst.ri.cpa)}`;
+}
+
+/* ---------- helm ---------- */
+function helmOrder(o) {
+  const own = S.own;
+  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', 'Midships'); return; }
+  if (o.steady) { own.tgt = Math.round(own.hdg) % 360; own.rud = 10 * Math.sign(own.rot || 1); own.dir = Math.sign(sdiff(own.tgt, own.hdg)) || 1; say('helm', `Steady, ${trueWords(own.tgt)}`); return; }
+  let dir = o.side ? (o.side === 'starboard' ? 1 : -1) : (o.crs != null ? (Math.sign(sdiff(o.crs, own.hdg)) || 1) : 1);
+  const mag = o.rud != null ? o.rud : 10;
+  own.rud = dir * mag; own.tgt = o.crs; own.dir = dir; own.steadyCalled = false;
+  const sw = dir > 0 ? 'Starboard' : 'Port';
+  say('helm', o.crs != null ? `${sw} ${mag === 0 ? 'ten' : digitsOrWords(mag)}, steer ${trueWords(o.crs)}` : `${sw} ${digitsOrWords(mag)}`);
+}
+const digitsOrWords = n => ({ 5: 'five', 10: 'ten', 15: 'fifteen', 20: 'twenty', 25: 'twenty five', 30: 'thirty', 35: 'thirty five' })[n] || digits(n);
+function stepOwn(dt) { // dt seconds
+  const o = S.own, k = 0.09 * Math.max(0.3, o.spd / 12);
+  let desired;
+  if (o.tgt != null) {
+    let rem = sdiff(o.tgt, o.hdg);
+    if (Math.abs(rem) > 15 && Math.sign(rem) !== o.dir) rem = o.dir > 0 ? n360(o.tgt - o.hdg) : -n360(o.hdg - o.tgt);
+    const lim = k * Math.abs(o.rud || 10);
+    desired = Math.max(-lim, Math.min(lim, rem * 0.35));
+    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; const t = o.tgt; o.tgt = null; say('helm', `Steady, ${trueWords(t)}`); }
+  } else desired = k * o.rud;
+  o.rot += (desired - o.rot) * Math.min(1, dt / 3);
+  o.hdg = n360(o.hdg + o.rot * dt);
+  o.spd += Math.max(-0.15 * dt, Math.min(0.15 * dt, o.tgtSpd - o.spd));
+  const v = vel(o.hdg, o.spd); o.x += v[0] * dt / 60; o.y += v[1] * dt / 60;
+}
+
+/* ---------- command handling ---------- */
+function handleUtterance(text, fromVoice) {
+  const cmds = parseCommand(text);
+  if (!cmds.length) { addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
+  if (!(cmds.length === 1 && cmds[0].k === 'ack')) addLog('oow', text);
+  const replies = []; // direct answers, spoken in order before queued call-ups
+  const reply = (who, fn) => replies.push({ who, call: false, body: fn });
+  for (const c of cmds) {
+    if (c.k === 'ack') onAck();
+    else if (c.k === 'pause') setPaused(true);
+    else if (c.k === 'resume') setPaused(false);
+    else if (c.k === 'checkSide') reply('lookout', () => checkSide(c.side));
+    else if (c.k === 'checkCourse') reply('nav', () => checkCourse(c.crs));
+    else if (c.k === 'nav') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } enqueue({ who: 'nav', call: true, body: navReport }); }
+    else if (c.k === 'bcr') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('nav', bcrReport); }
+    else if (c.k === 'trigger') { S.trigger = c.val == null ? null : c.val / 10; S.contacts.forEach(x => x.trigAlerted = false); const v = c.val; reply('nav', () => v == null ? 'CPA trigger cancelled' : `CPA trigger set, ${cableWords(v / 10)}`); }
+    else if (c.k === 'helm') helmOrder(c);
+    else if (c.k === 'speed') { S.own.tgtSpd = c.v; const v = c.v; reply('helm', () => `Revolutions for ${v} knots`); }
+  }
+  if (replies.length) { Q.unshift(...replies); pump(); }
+}
+
+/* ---------- sim step ---------- */
+let acc1 = 0, acc2 = 0, accTrail = 0;
+function simStep(dtSec) {
+  S.t += dtSec / 60;
+  stepOwn(dtSec);
+  for (const sp of S.spawns) if (!sp.done && S.t >= sp.t) { sp.done = true; spawn(sp); }
+  for (const c of S.contacts) { if (c.waiting && S.t >= c.delay) c.waiting = false; stepContact(c, dtSec / 60); }
+  for (const c of S.contacts) if (c.gone && c !== S.navTarget) S.past.push(c);
+  S.contacts = S.contacts.filter(c => !c.gone || c === S.navTarget);
+  acc1 += dtSec; acc2 += dtSec; accTrail += dtSec;
+  if (acc1 >= 1) { acc1 = 0; lookoutScan(); metrics(); cues(); }
+  if (acc2 >= 2) { acc2 = 0; triggerWatch(); }
+  if (accTrail >= 6) { accTrail = 0; S.ownTrail.push([S.own.x, S.own.y]); S.contacts.forEach(c => { if (c.moving && !c.waiting && hyp(c.x - S.own.x, c.y - S.own.y) < 5) { c.trail.push([c.x, c.y]); if (c.trail.length > 400) c.trail.shift(); } }); }
+}
+function spawn(sp) {
+  if (sp.kind === 'W') S.contacts.push(mkStraight(sp.type, 18.5, LANE_W(18.5) + (S.rand() - .5) * .4, 259, sp.sp));
+  else if (sp.kind === 'E') S.contacts.push(mkStraight(sp.type, 3.5, LANE_E(3.5) + (S.rand() - .5) * .4, 79, sp.sp));
+  else S.contacts.push(mkRoute('ferry', sp.route, 0));
+}
+function triggerWatch() {
+  if (S.trigger == null) return;
+  for (const c of S.contacts) {
+    if (!c.moving || c.waiting || c.gone) continue;
+    const ri = relInfo(S.own, c); if (ri.range > 6) continue;
+    if (ri.cpa < S.trigger && ri.tcpa > 0 && ri.tcpa < 15) {
+      if (!c.trigAlerted) { c.trigAlerted = true; const cc = c; enqueue({ who: 'nav', call: true, body: () => { const r = relInfo(S.own, cc); S.navTarget = cc; return `CPA trigger, ${relWords(r.rb)} ${typeWords(cc, night())}, CPA ${cableWords(r.cpa)} in ${Math.max(1, Math.round(r.tcpa))} minutes`; } }); }
+    } else if (ri.cpa > S.trigger + 0.1 || ri.tcpa < 0) c.trigAlerted = false;
+  }
+}
+const N2 = [Math.cos(LEG2 * D2R), -Math.sin(LEG2 * D2R)]; // unit normal of leg 2, pointing to the north side
+function cues() {
+  const d = (S.own.x - WP[0]) * N2[0] + (S.own.y - WP[1]) * N2[1];
+  if (!S.cues.oneMin && d <= 0.17 + S.own.spd / 60 && d > 0.1) { S.cues.oneMin = true; enqueue({ who: 'nav', call: true, body: () => `one minute to wheel over, next course ${trueWords(LEG2)}` }); }
+  if (!S.cues.wo && d <= 0.17) { S.cues.wo = true; S.cues.oneMin = true; say('nav', 'Wheel over, wheel over'); }
+  // end of leg
+  const along = (S.own.x - WP[0]) * Math.sin(LEG2 * D2R) + (S.own.y - WP[1]) * Math.cos(LEG2 * D2R);
+  if (S.cues.wo && along > 3.8 && !S.ended) endDrill();
+}
+function xte() {
+  const segD = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L; t = Math.max(0, Math.min(1, t)); return hyp(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
+  const p = [S.own.x, S.own.y]; return Math.min(segD(p, TRACK[0], TRACK[1]), segD(p, TRACK[1], TRACK[2]));
+}
+function metrics() {
+  S.maxXte = Math.max(S.maxXte, xte());
+  for (const c of S.contacts) {
+    if (c.waiting || c.gone) continue;
+    const r = hyp(c.x - S.own.x, c.y - S.own.y);
+    if (c.minR == null || r < c.minR) { c.minR = r; c.minRt = S.t; }
+    if (!c.moving) continue;
+    const u = [Math.sin(c.course * D2R), Math.cos(c.course * D2R)];
+    const side = Math.sign(u[0] * (S.own.y - c.y) - u[1] * (S.own.x - c.x));
+    if (c.lastSide && side && side !== c.lastSide && r < 3) {
+      const a = (S.own.x - c.x) * u[0] + (S.own.y - c.y) * u[1];
+      if (a > 0) c.bcrActual = Math.min(c.bcrActual ?? 99, a);
+    }
+    c.lastSide = side || c.lastSide;
+  }
+}
+
+/* ---------- log ---------- */
+function fmtT(m) { const s = Math.floor(m * 60); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+function addLog(who, text) {
+  S.log.push({ t: S.t, who, text });
+  const li = document.createElement('li'); li.className = 'r-' + who;
+  li.innerHTML = `<span class="lt">${fmtT(S.t)}</span><span class="lw">${ROLE[who]}</span><span class="lx"></span>`;
+  li.querySelector('.lx').textContent = text;
+  if (who === 'lookout' && S.lastReported && !text.startsWith('OOW sir')) { const c = S.lastReported; li.tabIndex = 0; li.title = 'Look at this contact'; li.onclick = () => { if (!c.gone) S.look = sdiff(relInfo(S.own, c).rb, 0); }; }
+  const ul = $('log'); ul.appendChild(li); while (ul.children.length > 60) ul.removeChild(ul.firstChild);
+  ul.scrollTop = ul.scrollHeight;
+}
+
+/* ---------- land ray-cast ---------- */
+function rayLand(ox, oy, dx, dy) { // returns fraction t of first hit (or 1e9)
+  let best = 1e9, bi = -1;
+  for (let k = 0; k < LAND.length; k++) {
+    const poly = LAND[k];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ex = b[0] - a[0], ey = b[1] - a[1], den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((a[0] - ox) * ey - (a[1] - oy) * ex) / den, u = ((a[0] - ox) * dy - (a[1] - oy) * dx) / den;
+      if (t > 0 && u >= 0 && u <= 1 && t < best) { best = t; bi = k; }
+    }
+  }
+  rayLand.hit = bi; return best;
+}
+
+/* ---------- lookout view ---------- */
+const PAL = {
+  day: { sky0: '#8db6cf', sky1: '#d6e4ec', sea0: '#3c6b80', sea1: '#1f4252', land: '#5f6f62', bld: '#8a9399', hull: '#2b3236', sup: '#e9ecec', haze: [214, 228, 236] },
+  dusk: { sky0: '#28304a', sky1: '#d98a5c', sea0: '#3a3f4a', sea1: '#171c24', land: '#1f2329', bld: '#272b33', hull: '#14171b', sup: '#5a5f66', haze: [190, 130, 100] },
+  night: { sky0: '#03060b', sky1: '#0c1522', sea0: '#070c13', sea1: '#020407', land: '#060a0f', bld: '#09101a', hull: '#05080c', sup: '#0b1119', haze: [12, 21, 34] }
+};
+const EYE = 11; // m
+function hash(x) { const s = Math.sin(x * 127.1) * 43758.5453; return s - Math.floor(s); }
+function drawView(ctx, W, H, tNow) {
+  const p = PAL[S.tod], fov = W < 520 ? 64 : 84, ppd = W / fov, hz = Math.round(H * 0.5);
+  const sx = rb => W / 2 + sdiff(rb, S.look) * ppd;
+  let g = ctx.createLinearGradient(0, 0, 0, hz); g.addColorStop(0, p.sky0); g.addColorStop(1, p.sky1); ctx.fillStyle = g; ctx.fillRect(0, 0, W, hz);
+  g = ctx.createLinearGradient(0, hz, 0, H); g.addColorStop(0, p.sea0); g.addColorStop(1, p.sea1); ctx.fillStyle = g; ctx.fillRect(0, hz, W, H - hz);
+  const dipPx = r => Math.atan(EYE / (r * 1852)) * R2D * ppd;
+  const hazeMix = (hex, r) => { const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255], f = Math.min(0.85, r / (S.tod === 'night' ? 30 : 9)); return `rgb(${c.map((v, i) => Math.round(v + (p.haze[i] - v) * f)).join(',')})`; };
+  // land skyline
+  const step = 0.5;
+  for (let a = -fov / 2 - 1; a < fov / 2 + 1; a += step) {
+    const rb = n360(S.look + a), tb = n360(rb + S.own.hdg);
+    const dx = Math.sin(tb * D2R), dy = Math.cos(tb * D2R);
+    const t = rayLand(S.own.x, S.own.y, dx * 14, dy * 14);
+    if (t > 1) continue;
+    const d = t * 14, k = rayLand.hit;
+    const hx = S.own.x + dx * d, hy = S.own.y + dy * d;
+    const hm = LAND_H[k] * (0.45 + 1.1 * hash(Math.round(hx * 40) + Math.round(hy * 40) * 7.3));
+    const hp = Math.max(1.5, Math.atan(hm / (d * 1852)) * R2D * ppd), base = hz + dipPx(d) * 0.6;
+    const x = W / 2 + a * ppd;
+    ctx.fillStyle = hazeMix(k === 0 && hm > 50 ? p.bld : p.land, d);
+    ctx.fillRect(x, base - hp, step * ppd + 1, hp + 1);
+    if (S.tod === 'night' && hash(hx * 91 + hy * 13) > 0.55) { ctx.fillStyle = hash(hx * 3 + hy) > 0.7 ? 'rgba(255,214,150,.9)' : 'rgba(255,240,210,.75)'; ctx.fillRect(x, base - hp * hash(hy * 17 + hx), 1.5, 1.5); }
+  }
+  // sea texture
+  ctx.strokeStyle = S.tod === 'day' ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.03)'; ctx.lineWidth = 1;
+  for (let i = 1; i < 14; i++) { const y = hz + (H - hz) * Math.pow(i / 14, 1.8); const off = (tNow / 40 + i * 37) % 60; ctx.beginPath(); for (let x = -off; x < W; x += 60) { ctx.moveTo(x, y); ctx.lineTo(x + 18 + i * 2, y); } ctx.stroke(); }
+  // contacts, far to near
+  const list = S.contacts.filter(c => !c.waiting && !c.gone).map(c => ({ c, ri: relInfo(S.own, c) })).filter(o => o.ri.range < 12 && Math.abs(sdiff(o.ri.rb, S.look)) < fov / 2 + 6).sort((a, b) => b.ri.range - a.ri.range);
+  for (const { c, ri } of list) drawShip(ctx, c, ri, sx(ri.rb), hz + dipPx(ri.range), ppd, p, hazeMix);
+  // own bow
+  const bx = sx(0);
+  if (Math.abs(sdiff(0, S.look)) < fov / 2 + 25) {
+    ctx.fillStyle = S.tod === 'day' ? '#4a5257' : '#0c1013';
+    ctx.beginPath(); ctx.moveTo(bx, H * 0.83); ctx.lineTo(bx + W * 0.32, H + 2); ctx.lineTo(bx - W * 0.32, H + 2); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = S.tod === 'day' ? '#2a3034' : '#1b2228'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx, H * 0.83); ctx.lineTo(bx, H * 0.69); ctx.stroke();
+  }
+  // bearing scale
+  ctx.fillStyle = 'rgba(8,12,16,.55)'; ctx.fillRect(0, 0, W, 22);
+  ctx.font = '11px "Share Tech Mono", monospace'; ctx.textAlign = 'center';
+  for (let a = Math.ceil((S.look - fov / 2) / 5) * 5; a <= S.look + fov / 2; a += 5) {
+    const rb = n360(a), x = sx(rb), major = rb % 10 === 0;
+    ctx.strokeStyle = 'rgba(220,230,235,.6)'; ctx.beginPath(); ctx.moveTo(x, 22); ctx.lineTo(x, major ? 14 : 18); ctx.stroke();
+    if (major && rb % 20 === 0) { ctx.fillStyle = rb === 0 || rb === 180 ? '#f2b544' : rb < 180 ? '#58d68d' : '#ff6f61'; ctx.fillText(rb === 0 ? 'AHEAD' : rb === 180 ? 'ASTERN' : (rb < 180 ? 'G' + rb : 'R' + (360 - rb)), x, 11); }
+  }
+  // marker on followed contact
+  if (S.navTarget && !S.navTarget.gone) { const ri = relInfo(S.own, S.navTarget); const x = sx(ri.rb); if (x > 0 && x < W) { ctx.fillStyle = '#f2b544'; ctx.beginPath(); ctx.moveTo(x - 5, 24); ctx.lineTo(x + 5, 24); ctx.lineTo(x, 31); ctx.fill(); } }
+}
+function drawShip(ctx, c, ri, x, base, ppd, p, hazeMix) {
+  const T = TYPES[c.type], m = ri.range * 1852;
+  const los = brg(c.x - S.own.x, c.y - S.own.y), rel = (c.course - los) * D2R;
+  const appL = T.L * Math.abs(Math.sin(rel)) + T.B * Math.abs(Math.cos(rel));
+  const w = Math.max(2, Math.atan(appL / m) * R2D * ppd), h = Math.max(1.5, Math.atan(T.H / m) * R2D * ppd);
+  const bowRight = Math.sin(rel) > 0, side = Math.abs(Math.sin(rel));
+  const nt = S.tod === 'night';
+  const L = x - w / 2, hullH = Math.max(1, h * (c.type === 'tanker' || c.type === 'bulk' ? 0.45 : 0.4));
+  ctx.fillStyle = hazeMix(p.hull, ri.range); ctx.fillRect(L, base - hullH, w, hullH);
+  const sup = hazeMix(p.sup, ri.range);
+  ctx.fillStyle = sup;
+  const at = f => bowRight ? L + w * f : L + w * (1 - f) ; // f=0 stern, 1 bow
+  if (!nt || true) {
+    if (c.type === 'container' || c.type === 'carcarrier') {
+      const stack = c.type === 'container' ? [hazeMix('#a64b3c', ri.range), hazeMix('#3f6f8f', ri.range), hazeMix('#8a8f55', ri.range)] : [sup];
+      if (c.type === 'carcarrier') { ctx.fillRect(Math.min(at(0.02), at(0.95)), base - h, w * 0.93 * side + 1, h - hullH); }
+      else { const n = Math.max(1, Math.floor(side * 8)); for (let i = 0; i < n; i++) { ctx.fillStyle = stack[(i + c.id) % 3]; const f0 = 0.25 + (0.65 / n) * i; ctx.fillRect(Math.min(at(f0), at(f0 + 0.65 / n)), base - h * 0.7, Math.abs(at(f0 + 0.65 / n) - at(f0)) - 0.5, h * 0.7 - hullH); } ctx.fillStyle = sup; ctx.fillRect(Math.min(at(0.08), at(0.2)), base - h, Math.max(1.5, Math.abs(at(0.2) - at(0.08))), h - hullH); }
+    } else if (c.type === 'tanker' || c.type === 'bulk' || c.type === 'bunker') {
+      ctx.fillRect(Math.min(at(0.03), at(0.18)), base - h, Math.max(1.5, Math.abs(at(0.18) - at(0.03))), h - hullH);
+      if (c.type === 'bulk') for (let i = 0; i < 4; i++) { const f = 0.3 + i * 0.16; ctx.fillRect(at(f), base - h * 0.62, 1, h * 0.62 - hullH); }
+    } else if (c.type === 'ferry') {
+      ctx.fillRect(Math.min(at(0.12), at(0.82)), base - h, Math.max(1.5, Math.abs(at(0.82) - at(0.12))), h - hullH);
+      if (!nt && w > 18) { ctx.fillStyle = hazeMix('#24323c', ri.range); ctx.fillRect(Math.min(at(0.18), at(0.78)), base - h * 0.78, Math.abs(at(0.78) - at(0.18)), Math.max(1, h * 0.12)); }
+      if (c.speed > 15 && !nt) { ctx.fillStyle = 'rgba(255,255,255,.55)'; const ww = w * 1.2 + 6; ctx.fillRect(bowRight ? L - ww : L + w, base - 1.5, ww, 2); }
+    } else if (c.type === 'tug') {
+      ctx.fillRect(Math.min(at(0.55), at(0.8)), base - h, Math.max(1.5, Math.abs(at(0.8) - at(0.55))), h - hullH);
+    } else { ctx.fillRect(Math.min(at(0.3), at(0.6)), base - h, Math.max(1, Math.abs(at(0.6) - at(0.3))), h - hullH); }
+  }
+  if (nt || S.tod === 'dusk') drawLights(ctx, c, ri, L, w, base, h, hullH, at, side);
+}
+function glow(ctx, x, y, col, r) { const g = ctx.createRadialGradient(x, y, 0, x, y, r * 3); g.addColorStop(0, col); g.addColorStop(0.25, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 3, 0, Math.PI * 2); ctx.fill(); }
+function drawLights(ctx, c, ri, L, w, base, h, hullH, at, side) {
+  const r = Math.max(1.4, 3.2 - ri.range * 0.5), W_ = 'rgba(255,250,235,1)', G_ = 'rgba(80,255,140,1)', R_ = 'rgba(255,70,60,1)';
+  const obs = n360(brg(S.own.x - c.x, S.own.y - c.y) - c.course);
+  if (c.anchored) { glow(ctx, at(0.95), base - h * 0.75, W_, r); glow(ctx, at(0.05), base - h * 0.55, W_, r * 0.9); for (let i = 1; i < 4; i++) glow(ctx, at(i / 4), base - hullH, 'rgba(255,220,160,.8)', r * 0.6); return; }
+  const fwd = obs <= 112.5 || obs >= 247.5;
+  if (fwd) { glow(ctx, at(0.7), base - h * 1.05, W_, r); if (TYPES[c.type].L > 50) glow(ctx, at(0.25), base - h * 1.3, W_, r); }
+  else glow(ctx, at(0.0), base - hullH, W_, r);
+  if (obs > 0 && obs <= 112.5) glow(ctx, at(0.6), base - hullH * 1.1, G_, r);
+  if (obs >= 247.5) glow(ctx, at(0.6), base - hullH * 1.1, R_, r);
+  if (obs < 6 || obs > 354) { glow(ctx, at(0.6) - 2, base - hullH, R_, r); glow(ctx, at(0.6) + 2, base - hullH, G_, r); }
+}
+
+/* ---------- plot ---------- */
+function drawPlot(ctx, W, H, full) {
+  const css = getComputedStyle(document.documentElement);
+  const col = n => css.getPropertyValue(n).trim();
+  let cx, cy, sc;
+  if (full) { cx = 11.2; cy = 1.6; sc = Math.min(W / 9, H / 6.5); } else { cx = S.own.x; cy = S.own.y; sc = Math.min(W, H) / 2 / S.plotRange; }
+  const X = x => W / 2 + (x - cx) * sc, Y = y => H / 2 - (y - cy) * sc;
+  ctx.fillStyle = col('--plot-sea'); ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = col('--plot-land');
+  for (const poly of LAND) { ctx.beginPath(); poly.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))); ctx.closePath(); ctx.fill(); }
+  ctx.setLineDash([4, 4]); ctx.lineWidth = 1; ctx.strokeStyle = col('--plot-anch'); ctx.fillStyle = col('--plot-anch'); ctx.font = '10px "Share Tech Mono", monospace'; ctx.textAlign = 'left';
+  for (const a of ANCH) { ctx.strokeRect(X(a[1]), Y(a[4]), (a[2] - a[1]) * sc, (a[4] - a[3]) * sc); ctx.fillText(a[0].replace('Eastern ', 'E. '), X(a[1]) + 3, Y(a[4]) + 11); }
+  const line = (f, x0, x1, c) => { ctx.strokeStyle = c; ctx.beginPath(); ctx.moveTo(X(x0), Y(f(x0))); ctx.lineTo(X(x1), Y(f(x1))); ctx.stroke(); };
+  line(PORT_LIMIT, 0, 20, col('--plot-limit'));
+  ctx.setLineDash([]); line(x => LANE_W(x) + 0.45, 0, 20, col('--plot-tss')); line(x => LANE_W(x) - 0.45, 0, 20, col('--plot-tss')); line(x => LANE_E(x) + 0.45, 0, 20, col('--plot-tss')); line(x => LANE_E(x) - 0.45, 0, 20, col('--plot-tss'));
+  ctx.fillStyle = col('--plot-tss'); ctx.fillText('TSS westbound', X(cx + 1.5), Y(LANE_W(cx + 1.5)) + 3); ctx.fillText('TSS eastbound', X(cx + 1.5), Y(LANE_E(cx + 1.5)) + 3);
+  ctx.fillStyle = col('--plot-label'); ctx.fillText('TMFT', X(TMFT[0]) - 10, Y(TMFT[1]) - 6); ctx.fillText('CNB', X(11.73) + 6, Y(3.6));
+  // planned track
+  ctx.setLineDash([6, 4]); ctx.strokeStyle = col('--accent'); ctx.lineWidth = 1.5; ctx.beginPath(); TRACK.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))); ctx.stroke(); ctx.setLineDash([]);
+  if (!full) { ctx.strokeStyle = col('--plot-ring'); ctx.lineWidth = 1; for (let r = 0.5; r <= S.plotRange; r += 0.5) { ctx.beginPath(); ctx.arc(X(S.own.x), Y(S.own.y), r * sc, 0, Math.PI * 2); ctx.stroke(); } }
+  // trails
+  if (full) {
+    ctx.lineWidth = 1; ctx.strokeStyle = col('--plot-trail');
+    for (const c of S.contacts.concat(S.past || [])) if (c.trail && c.trail.length > 1) { ctx.beginPath(); c.trail.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))); ctx.stroke(); }
+    ctx.strokeStyle = col('--fg'); ctx.lineWidth = 2; ctx.beginPath(); S.ownTrail.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))); ctx.stroke();
+  }
+  // contacts
+  for (const c of S.contacts) {
+    if (c.waiting || c.gone) continue;
+    const x = X(c.x), y = Y(c.y); if (x < -20 || x > W + 20 || y < -20 || y > H + 20) continue;
+    const hot = c === S.navTarget;
+    ctx.fillStyle = c.anchored ? col('--plot-anch') : hot ? col('--accent') : col('--plot-contact');
+    ctx.beginPath(); ctx.arc(x, y, c.anchored ? 2.5 : 3.5, 0, Math.PI * 2); ctx.fill();
+    if (c.moving && !full) { const v = vel(c.course, c.speed); ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(X(c.x + v[0] * 6), Y(c.y + v[1] * 6)); ctx.stroke(); }
+  }
+  // own ship
+  const ox = X(S.own.x), oy = Y(S.own.y), h = S.own.hdg * D2R;
+  ctx.save(); ctx.translate(ox, oy); ctx.rotate(h); ctx.fillStyle = col('--fg'); ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(5, 6); ctx.lineTo(-5, 6); ctx.closePath(); ctx.fill(); ctx.restore();
+  if (!full) { const v = vel(S.own.hdg, S.own.spd); ctx.strokeStyle = col('--fg'); ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(X(S.own.x + v[0] * 6), Y(S.own.y + v[1] * 6)); ctx.stroke(); }
+  // scale bar
+  ctx.fillStyle = col('--muted'); ctx.textAlign = 'left'; ctx.fillText(full ? 'Whole drill · 1 nm = ' + Math.round(sc) + ' px' : `Rings 0.5 nm · vectors 6 min`, 8, H - 8);
+}
+
+/* ---------- UI wiring ---------- */
+function fitCanvas(cv) { const r = cv.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1); const w = Math.round(r.width * d), h = Math.round(r.height * d); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } const ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0); return [ctx, r.width, r.height]; }
+let lastFrame = 0;
+function frame(ts) {
+  const dt = lastFrame ? Math.min(0.25, (ts - lastFrame) / 1000) : 0; lastFrame = ts;
+  if (S.running && !S.paused) { let left = dt * S.scale; while (left > 0) { const h = Math.min(0.1, left); simStep(h); left -= h; } }
+  if (S.own) {
+    const [vc, vw, vh] = fitCanvas($('view')); drawView(vc, vw, vh, ts);
+    if (!$('plotWrap').hidden) { const [pc, pw, ph] = fitCanvas($('plot')); drawPlot(pc, pw, ph, false); }
+    $('hHdg').textContent = String(Math.round(S.own.hdg) % 360).padStart(3, '0');
+    $('hSpd').textContent = S.own.spd.toFixed(1);
+    $('hRud').textContent = S.own.rud === 0 ? 'Mid' : (S.own.rud > 0 ? 'S' : 'P') + Math.abs(S.own.rud);
+    $('hOrd').textContent = S.own.tgt != null ? String(S.own.tgt).padStart(3, '0') : '—';
+    $('hClock').textContent = fmtT(S.t);
+    $('hLook').textContent = relShort(n360(S.look));
+  }
+  requestAnimationFrame(frame);
+}
+function setPaused(p) { S.paused = p; $('bPause').textContent = p ? 'Resume' : 'Pause'; $('bPause').setAttribute('aria-pressed', p); if (p && 'speechSynthesis' in window) { } }
+function setScale(s) { S.scale = s; document.querySelectorAll('[data-scale]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.scale === s)); }
+function startDrill() {
+  S.tod = document.querySelector('input[name=tod]:checked').value;
+  S.voiceOut = $('optVoice').checked;
+  S.seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+  const sc = buildScenario(S.seed); S.contacts = sc.contacts; S.spawns = sc.spawns; S.rand = sc.rand;
+  S.own = { x: START[0], y: START[1], hdg: 180, spd: 12, tgtSpd: 12, rud: 0, rot: 0, tgt: null, dir: 1 };
+  Object.assign(S, { t: 0, lastReported: null, navTarget: null, trigger: null, cues: { oneMin: false, wo: false }, look: 0, ownTrail: [], maxXte: 0, ended: false, past: [] });
+  Q.length = 0; cur = null; phase = 'idle'; $('log').innerHTML = '';
+  $('start').hidden = true; $('debrief').hidden = true; $('app').hidden = false;
+  S.running = true; setPaused(false); setScale(1);
+  if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch (e) { } }
+  speak('sys', 'Drill start. Own ship course one eight zero, twelve knots.', () => { });
+  setTimeout(pump, 2500);
+}
+function endDrill() {
+  S.ended = true; S.running = false; setPaused(true); clearTimeout(ackTimer); if ('speechSynthesis' in window) speechSynthesis.cancel();
+  $('debrief').hidden = false;
+  const rows = S.contacts.concat(S.past).filter((c, i, a) => a.indexOf(c) === i && c.firstRb != null && c.minR != null).sort((a, b) => a.minRt - b.minRt);
+  const tb = $('dbRows'); tb.innerHTML = '';
+  for (const c of rows) {
+    const cab = c.minR * 10, bcr = c.bcrActual != null ? c.bcrActual * 10 : null;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${relShort(c.firstRb ?? 0)}</td><td>${TYPES[c.type].name}</td><td class="num ${cab < 2.5 ? 'bad' : ''}">${cab.toFixed(1)}</td><td class="num ${bcr != null && bcr < 8 ? 'bad' : ''}">${bcr != null ? bcr.toFixed(1) : '—'}</td><td class="num">${fmtT(c.minRt)}</td>`;
+    tb.appendChild(tr);
+  }
+  $('dbSum').textContent = `${fmtT(S.t)} drill time · ${rows.length} contacts reported · furthest off track ${(S.maxXte * 10).toFixed(1)} cables`;
+  requestAnimationFrame(() => { const [pc, pw, ph] = fitCanvas($('dbPlot')); drawPlot(pc, pw, ph, true); });
+  $('debrief').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ---------- voice in ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, handsFree = false;
+function micNote(t) { $('micNote').textContent = t; $('micNote').hidden = !t; }
+const BLOCKED = 'The microphone is blocked. Allow microphone access for this site in your browser settings and reload, or use the buttons and typed orders.';
+let startWatch = null, heard = false;
+function micBlocked(why) {
+  handsFree = false; listening = false; clearTimeout(startWatch);
+  $('bMic').classList.remove('on'); $('bMic').querySelector('span').textContent = 'Mic blocked';
+  $('bMic').disabled = true; $('bHands').disabled = true; $('bHands').setAttribute('aria-pressed', false);
+  micNote(why || BLOCKED);
+}
+function initMic() {
+  if (!SR) { micBlocked('Voice input isn\u2019t available in this browser. Use the buttons or type orders. Chrome on a laptop or Android supports voice.'); return; }
+  rec = new SR(); rec.lang = 'en-GB'; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
+  rec.onstart = () => { heard = true; clearTimeout(startWatch); micNote(''); };
+  rec.onresult = e => { const t = e.results[e.results.length - 1][0].transcript; handleUtterance(t, true); };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') micBlocked();
+    else if (e.error === 'network') micBlocked('Voice recognition needs an internet connection to Google\u2019s speech service, and it couldn\u2019t reach it. Use the buttons or type orders.');
+    else if (e.error === 'no-speech') micNote('Didn\u2019t catch that. Press Talk and give the order right away.');
+  };
+  rec.onend = () => { listening = false; if (!$('bMic').disabled) { $('bMic').classList.remove('on'); $('bMic').querySelector('span').textContent = 'Talk'; } if (handsFree && S.running) setTimeout(listen, 200); };
+}
+function listen() {
+  if (!rec || listening || $('bMic').disabled) return;
+  try {
+    rec.start(); listening = true; $('bMic').classList.add('on'); $('bMic').querySelector('span').textContent = 'Listening';
+    clearTimeout(startWatch);
+    startWatch = setTimeout(() => { if (!heard) { try { rec.abort(); } catch (e) { } micBlocked(); } }, 2500);
+  } catch (e) { micBlocked(); }
+}
+function stopListen() { if (rec && listening) rec.stop(); }
+
+document.addEventListener('DOMContentLoaded', () => {
+  initMic();
+  $('bStart').onclick = startDrill;
+  $('bAgain').onclick = () => { $('debrief').hidden = true; $('app').hidden = true; $('start').hidden = false; window.scrollTo(0, 0); };
+  $('bEnd').onclick = () => { if (!S.ended) endDrill(); };
+  $('bPause').onclick = () => setPaused(!S.paused);
+  document.querySelectorAll('[data-scale]').forEach(b => b.onclick = () => setScale(+b.dataset.scale));
+  $('bAck').onclick = () => handleUtterance('OOW');
+  $('bNav').onclick = () => handleUtterance('nav');
+  $('bBcr').onclick = () => handleUtterance('nav bow crossing range');
+  $('bChkP').onclick = () => handleUtterance('check port');
+  $('bChkS').onclick = () => handleUtterance('check starboard');
+  document.querySelectorAll('[data-rud]').forEach(b => b.onclick = () => { const v = +b.dataset.rud; handleUtterance(v === 0 ? 'midships' : `${v > 0 ? 'starboard' : 'port'} ${Math.abs(v)}`); });
+  $('bSteer').onclick = () => { const v = $('inCrs').value.trim(); if (/^\d{1,3}$/.test(v)) { const r = $('inRud').value; handleUtterance(`${r === '0' ? '' : r} steer ${v.padStart(3, '0')}`.trim()); } };
+  $('bCheckCrs').onclick = () => { const v = $('inCrs').value.trim(); if (/^\d{1,3}$/.test(v)) handleUtterance(`check ${v.padStart(3, '0')}`); };
+  $('cmdForm').addEventListener('submit', e => { e.preventDefault(); const v = $('cmd').value.trim(); if (v) { handleUtterance(v); $('cmd').value = ''; } });
+  $('bMic').onclick = () => listening ? stopListen() : listen();
+  $('bHands').onclick = () => { handsFree = !handsFree; $('bHands').setAttribute('aria-pressed', handsFree); if (handsFree) listen(); else stopListen(); };
+  $('bPlot').onclick = () => { const w = $('plotWrap'); w.hidden = !w.hidden; $('bPlot').setAttribute('aria-pressed', !w.hidden); $('bPlot').textContent = w.hidden ? 'Peek plot' : 'Hide plot'; };
+  document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { S.plotRange = +b.dataset.range; document.querySelectorAll('[data-range]').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+  document.querySelectorAll('[data-look]').forEach(b => b.onclick = () => { const v = b.dataset.look; S.look = v === '0' ? 0 : n360(S.look + +v); if (S.look > 180) S.look -= 360; });
+  // drag to pan the lookout view
+  const cv = $('view'); let drag = null;
+  cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, look: S.look }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', e => { if (!drag) return; const fov = cv.clientWidth < 520 ? 64 : 84; S.look = sdiff(drag.look - (e.clientX - drag.x) / cv.clientWidth * fov, 0); });
+  cv.addEventListener('pointerup', () => drag = null); cv.addEventListener('pointercancel', () => drag = null);
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); listening ? stopListen() : listen(); }
+    if (e.key === 'o') handleUtterance('OOW');
+    if (e.key === 'ArrowLeft') S.look = sdiff(S.look - 10, 0);
+    if (e.key === 'ArrowRight') S.look = sdiff(S.look + 10, 0);
+  });
+  requestAnimationFrame(frame);
+});
+
+</script>
+
+</body>
+</html>
