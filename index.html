@@ -170,7 +170,7 @@ td.bad { color: var(--port); }
         <dt>WO</dt><dd>Come right to the westbound ITZ, 259</dd>
         <dt>Leg 2</dt><dd>3.8 nm west, anchorages to starboard, TSS to port</dd>
       </dl>
-      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm: "Course …"), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then your helm order, e.g. "starboard ten, steer two five nine".</p>
+      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm: "Course …"), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then declare it clear and give the order, e.g. "starboard clear, two five nine clear, starboard fifteen, slow ahead both". Engine orders: dead slow / slow / half / full ahead, stop both (half ahead = 12 kn).</p>
       <div class="opts">
         <div><div class="lbl">Light</div>
           <div class="seg" role="radiogroup" aria-label="Light">
@@ -553,10 +553,12 @@ function parseCommand(raw) {
   }
   const rud = t.match(/\b(port|starboard) (\d{1,2})\b/);
   const steer = t.match(/\bsteer (\d{3})\b/) || t.match(/\bcourse (\d{3})\b(?!.*check)/);
-  if (/\bmid ?ships\b/.test(t)) out.push({ k: 'helm', rud: 0, mid: true });
+  if (/\bmid ?ships?\b/.test(t)) { out.push({ k: 'helm', rud: 0, mid: true }); if (steer && !cc) out.push({ k: 'helm', side: null, rud: null, crs: +steer[1] % 360 }); } // "Midship. Steer 259."
   else if (/\b(steady|meet her)\b/.test(t)) out.push({ k: 'helm', steady: true });
   else if (rud || (steer && !cc)) out.push({ k: 'helm', side: rud ? rud[1] : null, rud: rud ? Math.min(35, +rud[2]) : null, crs: steer ? +steer[1] % 360 : null });
   const sp = t.match(/(\d{1,2}(?:\.\d)?) knots/); if (sp && !/\bnav\b/.test(t)) out.push({ k: 'speed', v: Math.min(30, +sp[1]) });
+  const tel = t.match(/\b(dead slow|slow|half|full) (ahead|astern)\b/) || t.match(/\b(stop) (?:both|engines|both engines)\b|\b(all stop)\b/);
+  if (tel) out.push({ k: 'telegraph', order: tel[2] && tel[1] !== 'stop' ? tel[1] + ' ' + tel[2] : 'stop' });
   return out;
 }
 
@@ -673,6 +675,7 @@ function afterClosingWOD(raw, skipLead) {
 function sitrepFilter(text) {
   const t = norm(text);
   if (/\bcarry on\b/.test(t) && S.loop) { addLog('oow', text.trim()); S.sitrepOpen = false; closeLoop(); return true; }
+  if (!S.sitrepOpen && !parseCommand(text).some(c => c.k !== 'ack') && /\b(port|starboard|stern|ahead|\d{3}) (is )?clear\b/.test(t)) { addLog('oow', text.trim()); return true; } // "starboard clear, two six zero clear"
   if (/^(roger|rodger|copy|noted|aye|very good|understood|okay|ok)\b/.test(t) && !S.sitrepOpen) { // an acknowledgement: logged, never answered
     const cmds0 = parseCommand(text.replace(/^\s*\w+[\s,.]*/, '')).filter(c => c.k !== 'ack');
     if (!cmds0.length && !SITREP_RE.test(t) && !WOD_RE.test(t)) { addLog('oow', text.trim()); return true; }
@@ -788,6 +791,17 @@ function bcrReport() {
   if (b.kind === 'stern') return `we cross her stern, passing ${cableWords(b.dist)} astern of her`;
   return `bow crossing range ${cableWords(b.dist)}`;
 }
+// Crossing / reciprocal / parallel, from her course against ours.
+function aspectClass(c) {
+  if (c.anchored) return 'vessel at anchor';
+  if (c.speed < 0.5) return 'stopped vessel';
+  const d = Math.abs(sdiff(c.course, S.own.hdg));
+  return d >= 135 ? 'reciprocal vessel' : d <= 45 ? 'parallel vessel' : 'crossing vessel';
+}
+// Engine orders. Ship's speeds per telegraph position (assumed; sternway is not modelled, astern = stop).
+const TELEGRAPH = { 'dead slow ahead': 4, 'slow ahead': 7, 'half ahead': 12, 'full ahead': 18, 'stop': 0, 'dead slow astern': 0, 'slow astern': 0, 'half astern': 0, 'full astern': 0 };
+// An engine order closes the loop, unless a turn is under way (then it closes when steady on course).
+function engineLoop() { if (!S.loop) return; if (S.own.rud !== 0 || S.own.tgt != null || S.loop.awaitSteady) { if (S.own.tgt != null) S.loop.awaitSteady = true; } else closeLoop(); }
 // BVP: "Starboard, no near objects sighted, Sir." / "Stern, ..." (stern = red 30 through green 30 astern)
 function checkSide(side) {
   let best = null, bd = 2.0;
@@ -800,7 +814,7 @@ function checkSide(side) {
   const Side = side[0].toUpperCase() + side.slice(1);
   if (!best) return `${Side}, no near objects sighted, sir`;
   const ri = relInfo(S.own, best);
-  return `${Side}, ${relWords(ri.rb)}, ${describe(best)}, ${rangeWords(ri.range)}, sir`;
+  return `${Side}, nearest ${relWords(ri.rb)}, ${aspectClass(best)}`;
 }
 function landAhead(crs, dist) {
   const d = [Math.sin(crs * D2R) * dist, Math.cos(crs * D2R) * dist];
@@ -823,7 +837,8 @@ function checkCourse(crs) {
 }
 
 /* ---------- helm ---------- */
-function helmOrder(o) {
+function helmOrder(o, speakFn) {
+  const say = speakFn || window.say; // replies keep the helm's repeats in the order the orders were given
   const own = S.own;
   // The loop on a contact stays open through a turn (rudder, midship) and closes once the ship is
   // steady on the ordered course (helm: "Course ..."), or at once for a "steady" order.
@@ -876,8 +891,9 @@ function handleUtterance(text, fromVoice) {
     else if (c.k === 'look') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('lookout', () => lookoutBearing(S.navTarget)); }
     else if (c.k === 'bcr') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('nav', bcrReport); }
     else if (c.k === 'trigger') { S.trigger = c.val == null ? null : c.val / 10; S.contacts.forEach(x => x.trigAlerted = false); const v = c.val; reply('nav', () => v == null ? 'CPA trigger cancelled' : `CPA trigger set, ${cableWords(v / 10)}`); }
-    else if (c.k === 'helm') helmOrder(c);
-    else if (c.k === 'speed') { closeLoop(); S.own.tgtSpd = c.v; const v = c.v; reply('helm', () => `Revolutions for ${v} knots`); }
+    else if (c.k === 'helm') helmOrder(c, (w, txt) => reply(w, () => txt));
+    else if (c.k === 'speed') { engineLoop(); S.own.tgtSpd = c.v; const v = c.v; reply('helm', () => `Revolutions for ${v} knots`); }
+    else if (c.k === 'telegraph') { engineLoop(); S.own.tgtSpd = TELEGRAPH[c.order]; const o = c.order; reply('helm', () => o === 'stop' ? 'Stop both. Both engines stopped' : `${o[0].toUpperCase() + o.slice(1)} both. Both engines ${o}`); }
   }
   if (replies.length) { Q.unshift(...replies); pump(); }
 }
@@ -1272,6 +1288,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=bvp2"></script>
+<script src="voice.js?v=bvp3"></script>
 </body>
 </html>
