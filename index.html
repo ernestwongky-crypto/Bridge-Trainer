@@ -516,7 +516,8 @@ function normalise(raw) {
   let t = ' ' + raw.toLowerCase().replace(/[,.;!?]/g, ' ').replace(/-/g, ' ') + ' ';
   // ack variants before number conversion
   t = t.replace(/\b(o\s?o\s?w|o w|oh oh (?:w|double you)|o o double you|oww|ow|oow)\b/g, ' oow ');
-  t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b|\bcheck star\b/g, m => m === 'check star' ? 'check starboard' : 'starboard');
+  t = t.replace(/\bcheck star\b(?! ?board)/g, 'check stern'); // the mic hears "check stern" as "check star" (run 1)
+  t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b/g, 'starboard');
   t = t.replace(/\b(navy|naff|nab|nev|knav|navigator|neff)\b/g, 'nav');
   t = t.replace(/\b(pcr|pc are|bc are|b c r|bee see are|bcrs)\b/g, 'bcr');
   t = t.replace(/\bcheck (stun|stan|stem|stern)\b/g, 'check stern');
@@ -543,8 +544,8 @@ function parseCommand(raw) {
   for (const side of t.matchAll(/check (port|starboard|stern)/g)) out.push({ k: 'checkSide', side: side[1] }); // "check port, check starboard" answers both
   const cc = t.match(/check (?:course )?(\d{3})\b/); if (cc) out.push({ k: 'checkCourse', crs: +cc[1] % 360 });
   if (/\b(lookout|look out)\b/.test(t) || /\bbearing (movement|drift|check)\b/.test(t)) { const fu = t.match(/\b(green|red) (\d{1,3})\b/); out.push({ k: 'look', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null }); }
-  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t)) {
-    const trig = t.match(/(?:cpa )?trigger (?:at |of )?(\d+(?:\.\d+)?)/);
+  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t) || /\bcpa\b.*\b(?:below|under|less than|inside|within)\b/.test(t)) {
+    const trig = t.match(/(?:cpa )?trigger (?:at |of )?(\d+(?:\.\d+)?)/) || t.match(/\b(?:report|call|tell|inform)\b.*\bcpa\b.*\b(?:below|under|less than|inside|within)\s+(\d+(?:\.\d+)?)\s*cables?/);
     const fu = t.match(/\b(green|red) (\d{1,3})\b/);
     if (/\bcancel\b.*trigger|trigger (?:off|cancel)/.test(t)) out.push({ k: 'trigger', val: null });
     else if (trig) out.push({ k: 'trigger', val: +trig[1] });
@@ -657,7 +658,7 @@ function finish() { const then = cur && cur.then; cur = null; phase = 'idle'; if
    course and speed, on "carry on", or by tapping the status bar. No timer. */
 const SITREP_QUIET_S = 8;
 const SITREP_RE = /\bsit\s?-?\s?reps?\b|\bsitrap\b|\bset rep\b|\bsea\s?-?\s?t?reps?\b|\bsea trip\b|\bsit trip\b|\bsitrip\b|\bsee trap\b|\bc rep\b/;
-const WOD_RE = /\bwatch\s?-?\s?on\s?-?\s?deck\b/;
+const WOD_RE = /\bwatch\s?-?\s?on\s?-?\s?(?:the\s)?(?:deck|dec|dek|their|there)\b/;
 const LEAD_RE = /^\s*(watch\s?-?\s?on\s?-?\s?deck\s*)?(sit\s?-?\s?reps?|sitrap|set rep|sea\s?-?\s?t?reps?|sea trip|sit trip|sitrip|see trap|c rep)?\s*/;
 const MAINTAIN_RE = /\bmaintain\b|\bstand on\b|\bstanding on\b|\bhold (?:my |our |present )?course\b|\bno action\b/;
 const QUESTION_START = /^(what|which|where|when|why|how|who|say again|repeat|confirm|is|are|can|could|do|does|did|any|tell|give me)\b/;
@@ -666,40 +667,48 @@ function loopToOOW() { if (S.loop) { S.loop.stage = 'oow'; setStatus(); } }
 function closeLoop() { if (!S.loop) return; tr('loop_close'); S.loop = null; S.sitrepOpen = false; S.nextScanAt = performance.now() + 1500; setStatus(); setTimeout(pump, 100); }
 const norm = text => text.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
 // Returns true when the words belong to the OOW's sitrep (logged, never answered).
-// Text after the closing "watch-on-deck" (e.g. "check port, check starboard") is handled as its own order.
-function afterClosingWOD(raw, skipLead) {
-  // same length as raw, so positions line up; find the last "watch on deck" after the opening one
-  const low = raw.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ');
-  const lead = skipLead ? (low.match(LEAD_RE) || [''])[0].length : 0;
-  let idx = -1, m; const g = /watch\s?-?\s?on\s?-?\s?deck/g;
-  while ((m = g.exec(low))) if (m.index >= lead) idx = m.index + m[0].length;
-  return idx < 0 ? null : raw.slice(idx).replace(/^[\s.,;!?-]+/, '').trim();
-}
+// A sitrep is recognised by its content, not only its opening words (the mic mishears "watch on deck"
+// and "sitrep", and the OOW may lead with "Roger"). Sentences inside it that are instructions
+// ("Nav, report if CPA drops below two cables", "check port") are carried out once it ends.
+const ACK_LEAD = /^\s*(roger|rodger|copy|noted|aye|very good|understood|okay|ok)\b[\s,.!]*/i;
+const SITREP_MARK = /\b(intention|intend|assess|assessed|risk of collision)\b/;
+const isSitrepSentence = s => SITREP_RE.test(s) || WOD_RE.test(s) || SITREP_MARK.test(s);
+const ORDER_KINDS = new Set(['trigger', 'helm', 'speed', 'step', 'telegraph', 'checkSide', 'checkCourse', 'bcr']);
 function sitrepFilter(text) {
   const t = norm(text);
   if (/\bcarry on\b/.test(t) && S.loop) { addLog('oow', text.trim()); S.sitrepOpen = false; closeLoop(); return true; }
-  if (!S.sitrepOpen && !parseCommand(text).some(c => c.k !== 'ack') && /\b(port|starboard|stern|ahead|\d{3}) (is )?clear\b/.test(t)) { addLog('oow', text.trim()); return true; } // "starboard clear, two six zero clear"
-  if (/^(roger|rodger|copy|noted|aye|very good|understood|okay|ok)\b/.test(t) && !S.sitrepOpen) { // an acknowledgement: logged, never answered
-    const cmds0 = parseCommand(text.replace(/^\s*\w+[\s,.]*/, '')).filter(c => c.k !== 'ack');
-    if (!cmds0.length && !SITREP_RE.test(t) && !WOD_RE.test(t)) { addLog('oow', text.trim()); return true; }
-  }
-  const cmds = parseCommand(text).filter(c => c.k !== 'ack');
-  let opening = false;
-  if (!S.sitrepOpen) {
+  const body = text.replace(ACK_LEAD, '').trim(), led = body.length < text.trim().length;
+  const sentences = body.split(/(?<=[.?!])\s+/).map(x => x.trim()).filter(Boolean);
+  const sNorm = sentences.map(norm);
+  const cmds = parseCommand(body).filter(c => c.k !== 'ack');
+  const marked = sNorm.some(isSitrepSentence);
+  if (!S.sitrepOpen && !marked) {
+    if (!cmds.length && /\b(port|starboard|stern|ahead|\d{3}) (is )?clear\b/.test(t)) { addLog('oow', text.trim()); return true; } // "starboard clear, 259 clear"
+    if ((led || !body) && !cmds.length) { addLog('oow', text.trim()); return true; } // "Roger", "Very good": acknowledgement only
     const inLoop = S.loop && S.loop.stage === 'oow';
-    const opens = SITREP_RE.test(t) || /^watch\s?-?\s?on\s?-?\s?deck\b/.test(t);
-    if (!opens) {
-      // other words during an open loop that are neither an order nor a question: logged only, so the team doesn't talk over you
-      if (inLoop && !cmds.length && !QUESTION_START.test(t) && !/\?/.test(text)) { addLog('oow', text.trim()); return true; }
-      return false;
-    }
-    S.sitrepOpen = true; S.sitrepText = ''; opening = true;
-  } else if (cmds.length && !WOD_RE.test(t)) { closeSitrep(); return false; } // an order ends the sitrep and is acted on
-  const rest = afterClosingWOD(text, opening);
-  const said = rest == null ? text.trim() : text.slice(0, text.length - rest.length).trim();
-  S.sitrepText += ' ' + norm(said); S.sitrepQuiet = SITREP_QUIET_S;
-  addLog('oow', said); setStatus();
-  if (rest != null) { closeSitrep(); if (rest) setTimeout(() => (window.VOICE && VOICE.active ? VOICE.route(rest) : handleUtterance(rest, true)), 0); }
+    // other words during an open loop that are neither an order nor a question: logged only, so the team doesn't talk over you
+    if (inLoop && !cmds.length && !QUESTION_START.test(t) && !/\?/.test(text)) { addLog('oow', text.trim()); return true; }
+    return false;
+  }
+  if (S.sitrepOpen && !marked && cmds.length) { closeSitrep(); return false; } // an order after the sitrep ends it and is acted on
+  const opening = !S.sitrepOpen;
+  if (opening) { S.sitrepOpen = true; S.sitrepText = ''; }
+  const said = [], orders = []; let closing = false;
+  sentences.forEach((sen, i) => {
+    const n = sNorm[i];
+    const kinds = parseCommand(sen).map(c => c.k).filter(k => ORDER_KINDS.has(k));
+    if (kinds.length && !SITREP_MARK.test(n)) { orders.push(sen); return; }
+    // the opening "watch on deck" is the first thing said; any later one closes the sitrep
+    const wods = (n.match(new RegExp(WOD_RE.source, 'g')) || []).length;
+    const isOpeningOnly = opening && i === 0 && wods === 1 && new RegExp('^' + WOD_RE.source.replace(/^\\b/, '')).test(n);
+    if (wods && !isOpeningOnly) closing = true;
+    said.push(sen);
+  });
+  if (said.length) { S.sitrepText += ' ' + norm(said.join(' ')); addLog('oow', (led ? text.trim().slice(0, text.trim().length - body.length) : '') + said.join(' ')); }
+  S.sitrepQuiet = SITREP_QUIET_S; setStatus();
+  if (orders.length) addLog('oow', orders.join(' '));
+  if (closing) closeSitrep();
+  if (orders.length) setTimeout(() => orders.forEach(o => handleUtterance(o, true, true)), 0); // carried out, not logged twice
   return true;
 }
 function closeSitrep() {
@@ -876,14 +885,14 @@ function stepOwn(dt) { // dt seconds
 }
 
 /* ---------- command handling ---------- */
-function handleUtterance(text, fromVoice) {
+function handleUtterance(text, fromVoice, fromSitrep) {
   if (window.VOICE && VOICE.active && !fromVoice) { VOICE.route(text); return; }
   if ((window.LIVE && LIVE.active) && !fromVoice) { LIVE.userText(text); return; }
   tr('handle', { text, fromVoice: !!fromVoice });
-  if (sitrepFilter(text)) { tr('as_sitrep', { text }); return; }
+  if (!fromSitrep && sitrepFilter(text)) { tr('as_sitrep', { text }); return; }
   const cmds = parseCommand(text);
   if (!cmds.length) { tr('not_understood', { text }); addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
-  if (!(cmds.length === 1 && cmds[0].k === 'ack')) addLog('oow', text);
+  if (!fromSitrep && !(cmds.length === 1 && cmds[0].k === 'ack')) addLog('oow', text);
   const replies = []; // direct answers, spoken in order before queued call-ups
   const reply = (who, fn) => replies.push({ who, call: false, body: fn });
   for (const c of cmds) {
@@ -930,7 +939,7 @@ function triggerWatch() {
     if (!c.moving || c.waiting || c.gone) continue;
     const ri = relInfo(S.own, c); if (ri.range > 6) continue;
     if (ri.cpa < S.trigger && ri.tcpa > 0 && ri.tcpa < 15) {
-      if (!c.trigAlerted) { c.trigAlerted = true; const cc = c; enqueue({ who: 'nav', call: true, auto: true, body: () => { const r = relInfo(S.own, cc); S.navTarget = cc; return `CPA trigger, ${relWords(r.rb)} ${typeWords(cc, night())}, CPA ${cableWords(r.cpa)} in ${Math.max(1, Math.round(r.tcpa))} minutes`; } }); }
+      if (!c.trigAlerted) { c.trigAlerted = true; const cc = c; enqueue({ who: 'nav', call: true, body: () => { const r = relInfo(S.own, cc); S.navTarget = cc; return `CPA trigger, ${relWords(r.rb)} ${typeWords(cc, night())}, CPA ${cableWords(r.cpa)} in ${Math.max(1, Math.round(r.tcpa))} minute${Math.max(1, Math.round(r.tcpa)) > 1 ? 's' : ''}`; } }); }
     } else if (ri.cpa > S.trigger + 0.1 || ri.tcpa < 0) c.trigAlerted = false;
   }
 }
@@ -1295,6 +1304,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=step1"></script>
+<script src="voice.js?v=sit3"></script>
 </body>
 </html>
