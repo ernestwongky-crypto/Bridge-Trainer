@@ -3,7 +3,7 @@
    simulator's own parser. Anything else goes to Claude, which answers as the bridge team using
    simulator tools. Each role speaks with its own Deepgram voice. */
 (function () {
-const K = { mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', model: 'bt.claudeModel', vLook: 'bt.vLook', vNav: 'bt.vNav', vHelm: 'bt.vHelm' };
+const K = { ear: 'bt.ear', mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', model: 'bt.claudeModel', vLook: 'bt.vLook', vNav: 'bt.vNav', vHelm: 'bt.vHelm' };
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
 const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en' };
@@ -21,7 +21,8 @@ OUTPUT FORMAT
 - Keep it short and clipped like real bridge comms. No filler, no pleasantries.
 
 GROUND TRUTH
-- A simulator runs the ship and all traffic. Every bearing, range, course, speed, CPA, time and bow crossing range you say MUST come from a tool result. Never estimate or invent a figure. When a tool returns a sentence, speak it word for word.
+- A simulator runs the ship and all traffic. Each message includes the simulator's situation right now, with ready-made report sentences for the followed contact. Answer straight from it: every bearing, range, course, speed, CPA, time and bow crossing range you say MUST come from that situation or a tool result. Never estimate or invent a figure. When a ready-made sentence fits, speak it word for word.
+- Call a tool only to act (helm_order, set_speed, set_cpa_trigger, follow_contact), for check_course or check_side, or for a report on a contact other than the followed one. Speed matters: answer in one go whenever you can.
 - Steering and speed happen only through helm_order and set_speed. The helmsman's repeat is spoken automatically when you call them, so do NOT write a HELM line for it.
 
 STYLE
@@ -49,6 +50,14 @@ const TOOLS = [
 TOOLS[TOOLS.length - 1].cache_control = { type: 'ephemeral' };
 
 function b64(buf) { return buf; }
+const earOn = () => store.get(K.ear) !== '0'; // earphones: the mic stays open while the team talks
+// Long lines are spoken phrase by phrase, so the first words start sooner.
+function splitForSpeech(text) {
+  const parts = text.split(/(?<=[,.;])\s+/), out = [];
+  for (const p of parts) { if (out.length && (out[out.length - 1].length < 28 || p.length < 12)) out[out.length - 1] += ' ' + p; else out.push(p); }
+  return out;
+}
+window.splitForSpeech = splitForSpeech;
 const r1 = x => Math.round(x * 10) / 10;
 
 const VOICE = window.VOICE = {
@@ -89,13 +98,13 @@ const VOICE = window.VOICE = {
     } catch (e) { this.fail('Microphone not available (' + (e.message || e.name) + '). Allow the microphone for this site and start again.'); return; }
     this.openSTT();
     ['lookout', 'nav', 'helm'].forEach(r => this.openTTS(r));
-    this.gate = setInterval(() => { const quiet = !this.playing(); if (this.node) this.node.port.postMessage(quiet && !this.muted); }, 80);
+    this.gate = setInterval(() => { const open = earOn() || !this.playing(); if (this.node) this.node.port.postMessage(open && !this.muted); }, 80);
     this.diagT = setInterval(() => this.diag(), 250);
   },
 
   /* ---------- ears ---------- */
   openSTT() {
-    const q = new URLSearchParams({ model: 'nova-3', language: 'en', encoding: 'linear16', sample_rate: '16000', channels: '1', interim_results: 'true', endpointing: '350', utterance_end_ms: '1000', smart_format: 'false', punctuate: 'true' });
+    const q = new URLSearchParams({ model: 'nova-3', language: 'en', encoding: 'linear16', sample_rate: '16000', channels: '1', interim_results: 'true', endpointing: '300', utterance_end_ms: '1000', smart_format: 'false', punctuate: 'true' });
     let url = 'wss://api.deepgram.com/v1/listen?' + q.toString();
     for (const k of KEYTERMS) url += '&keyterm=' + encodeURIComponent(k);
     const ws = new WebSocket(url, ['token', store.get(K.dg)]);
@@ -114,7 +123,7 @@ const VOICE = window.VOICE = {
   },
   onSTT(m) {
     this.msgs = (this.msgs || 0) + 1;
-    if (this.playing()) { if (m.type === 'Results' && m.is_final) this.words = ''; return; }
+    if (this.playing() && !earOn()) { if (m.type === 'Results' && m.is_final) this.words = ''; return; }
     if (m.type === 'Results') {
       const t = (m.channel && m.channel.alternatives && m.channel.alternatives[0] && m.channel.alternatives[0].transcript) || '';
       if (m.is_final && t) this.words += (this.words ? ' ' : '') + t;
@@ -123,6 +132,7 @@ const VOICE = window.VOICE = {
     } else if (m.type === 'UtteranceEnd') this.endUtterance();
   },
   endUtterance() {
+    this.tHeard = performance.now();
     const t = this.words.trim(); this.words = '';
     if (!t) return;
     this.route(t);
@@ -140,7 +150,9 @@ const VOICE = window.VOICE = {
   async ask(text) {
     this.thinking++; this.status('Bridge team thinking…', 'wait');
     const recent = S.log.slice(-14).map(l => `${ROLE[l.who] || l.who}: ${l.text}`).join('\n');
-    const messages = [{ role: 'user', content: `Recent bridge comms:\n${recent}\n\nThe OOW now says: "${text}"` }];
+    const now = situation(), f = S.navTarget && !S.navTarget.gone ? S.navTarget : null;
+    if (f) now.followed_contact_reports = { nav_followup: navReport(), bow_crossing: bcrReport(), lookout: lookoutBearing(f) };
+    const messages = [{ role: 'user', content: `Situation now:\n${JSON.stringify(now)}\n\nRecent bridge comms:\n${recent}\n\nThe OOW now says: "${text}"` }];
     try {
       for (let step = 0; step < 5; step++) {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -218,9 +230,13 @@ const VOICE = window.VOICE = {
     const role = who === 'sys' ? 'nav' : who, ws = this.tts[role];
     if ((!ws || ws.readyState === 0) && this.active && (tries || 0) < 25) { setTimeout(() => this.say(who, text, done, (tries || 0) + 1), 200); return; }
     if (!ws || !ws.ok || ws.readyState !== 1) { this.browserSay(who, text, done); return; }
-    const it = { done }; it.guard = setTimeout(() => { const i = ws.pending.indexOf(it); if (i >= 0) ws.pending.splice(i, 1); done(); }, 4000 + text.length * 120);
-    ws.pending.push(it);
-    ws.send(JSON.stringify({ type: 'Speak', text })); ws.send(JSON.stringify({ type: 'Flush' }));
+    const pieces = splitForSpeech(text);
+    pieces.forEach((piece, k) => {
+      const fin = k === pieces.length - 1 ? done : () => { };
+      const it = { done: fin }; it.guard = setTimeout(() => { const i = ws.pending.indexOf(it); if (i >= 0) ws.pending.splice(i, 1); fin(); }, 4000 + piece.length * 120);
+      ws.pending.push(it);
+      ws.send(JSON.stringify({ type: 'Speak', text: piece })); ws.send(JSON.stringify({ type: 'Flush' }));
+    });
   },
   browserSay(who, text, done) {
     if (!('speechSynthesis' in window)) { setTimeout(done, 400 + text.length * 50); return; }
@@ -243,6 +259,7 @@ const VOICE = window.VOICE = {
     const f = Math.min(144, pcm.length >> 2); for (let i = 0; i < f; i++) { ch[i] *= i / f; ch[pcm.length - 1 - i] *= i / f; }
     const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
     const t = Math.max(this.ctx.currentTime + 0.03, this.playEnd + 0.04); s.start(t); this.playEnd = t + buf.duration;
+    if (this.tHeard) { this.lastLag = (performance.now() - this.tHeard) / 1000 + (t - this.ctx.currentTime); this.tHeard = null; }
     setTimeout(done, (this.playEnd - this.ctx.currentTime) * 1000 + 20);
   },
   playing() { return !!this.browserSpeaking || (!!this.ctx && this.playEnd > 0 && this.playEnd + 0.35 > this.ctx.currentTime); },
@@ -253,7 +270,7 @@ const VOICE = window.VOICE = {
     const bars = '\u2588'.repeat(lvl) + '\u2591'.repeat(8 - lvl);
     const stt = !this.stt ? 'off' : ['connecting', 'connected', 'closing', 'closed ' + (this.sttClose || '')][this.stt.readyState];
     const tts = ['lookout', 'nav', 'helm'].filter(r => this.tts[r] && this.tts[r].readyState === 1).length;
-    d.textContent = `Mic ${bars} (${(this.micLabel || '?').replace(/\s*\(.*?\)\s*/g, ' ').trim().slice(0, 28)}) · Audio ${this.ctx ? this.ctx.state : 'none'} · Ears ${stt} (${this.sent || 0} sent, ${this.msgs || 0} back) · Voices ${tts}/3${this.playing() ? ' · team talking' : ''}${this.muted ? ' · muted' : ''}`;
+    d.textContent = `Mic ${bars} (${(this.micLabel || '?').replace(/\s*\(.*?\)\s*/g, ' ').trim().slice(0, 28)}) · Audio ${this.ctx ? this.ctx.state : 'none'} · Ears ${stt} (${this.sent || 0} sent, ${this.msgs || 0} back) · Voices ${tts}/3${this.lastLag != null ? ' · Last reply ' + this.lastLag.toFixed(1) + ' s' : ''}${this.playing() ? ' · team talking' : ''}${this.muted ? ' · muted' : ''}`;
   },
 
   setMute(m) { this.muted = m; const b = el('bCallMute'); if (b) { b.setAttribute('aria-pressed', m); b.textContent = m ? 'Unmute' : 'Mute'; } if (this.active) this.status(m ? 'Call on · muted' : 'Call on · listening', 'ok'); },
@@ -322,6 +339,7 @@ function initUI() {
   const sel = [['inModel', K.model], ['inVLook', K.vLook], ['inVNav', K.vNav], ['inVHelm', K.vHelm]];
   for (const [id, k] of sel) { const s = el(id); if (store.get(k)) s.value = store.get(k); s.onchange = () => store.set(k, s.value); }
   el('bCallMute').onclick = () => VOICE.setMute(!VOICE.muted);
+  if (el('optEar')) { el('optEar').checked = earOn(); el('optEar').onchange = () => store.set(K.ear, el('optEar').checked ? '1' : '0'); }
   fillMics(); el('inMic').onchange = () => store.set(K.mic, el('inMic').value);
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', fillMics);
   refresh();

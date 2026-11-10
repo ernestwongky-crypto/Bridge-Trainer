@@ -182,6 +182,7 @@ td.bad { color: var(--port); }
       </div>
       <div id="callSetup" class="callsetup" hidden>
         <label class="calltoggle"><input type="checkbox" id="optCall" disabled> <span><b>Voice call</b> · talk naturally, Claude runs the bridge team</span></label>
+        <label class="calltoggle"><input type="checkbox" id="optEar" checked> <span><b>Earphones on</b> · the mic stays open while the team talks, so nothing you say is lost. Untick on laptop speakers.</span></label>
         <div class="keyrow"><input id="inDg" type="password" autocomplete="off" placeholder="Deepgram API key (ears and voices)" aria-label="Deepgram API key"><button id="bSaveDg" type="button">Save</button></div>
         <div class="keyrow"><input id="inCl" type="password" autocomplete="off" placeholder="Claude API key (brain)" aria-label="Claude API key"><button id="bSaveCl" type="button">Save</button></div>
         <p class="note">Deepgram key: <span id="dgState" class="kstate"></span> · Claude key: <span id="clState" class="kstate"></span> · <button id="bClearKeys" type="button" class="linkbtn">Remove keys</button></p>
@@ -1229,6 +1230,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=loop1"></script>
+<script src="voice.js?v=fast1"></script>
 </body>
 </html>
