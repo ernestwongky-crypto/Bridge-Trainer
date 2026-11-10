@@ -187,7 +187,7 @@ const VOICE = window.VOICE = {
         if (!o.mid && !o.steady && o.side == null && o.crs == null) return { error: 'need a side or a course' };
         helmOrder(o); return 'done, helmsman repeated the order';
       }
-      case 'set_speed': { const v = Math.max(0, Math.min(30, +a.knots)); S.own.tgtSpd = v; say('helm', `Revolutions for ${v} knots`); return 'done, helmsman repeated the order'; }
+      case 'set_speed': { const v = Math.max(0, Math.min(30, +a.knots)); closeLoop(); S.own.tgtSpd = v; say('helm', `Revolutions for ${v} knots`); return 'done, helmsman repeated the order'; }
       case 'set_cpa_trigger': { const v = +a.cables; S.trigger = v > 0 ? v / 10 : null; S.contacts.forEach(x => x.trigAlerted = false); return v > 0 ? `CPA trigger set, ${cableWords(v / 10)}` : 'CPA trigger cancelled'; }
     }
     return { error: 'unknown tool' };
@@ -196,7 +196,7 @@ const VOICE = window.VOICE = {
   /* ---------- voices ---------- */
   voiceFor(who) { return store.get(who === 'lookout' ? K.vLook : who === 'helm' ? K.vHelm : K.vNav) || DEF_VOICE[who] || DEF_VOICE.nav; },
   openTTS(who) {
-    const q = new URLSearchParams({ model: this.voiceFor(who), encoding: 'linear16', sample_rate: '24000' });
+    const q = new URLSearchParams({ model: this.voiceFor(who), encoding: 'linear16', sample_rate: '24000', speed: '1.2' });
     const ws = new WebSocket('wss://api.deepgram.com/v1/speak?' + q.toString(), ['token', store.get(K.dg)]);
     ws.binaryType = 'arraybuffer'; ws.pending = []; ws.carry = null; ws.ok = false;
     ws.onopen = () => { ws.ok = true; };
@@ -224,7 +224,7 @@ const VOICE = window.VOICE = {
   },
   browserSay(who, text, done) {
     if (!('speechSynthesis' in window)) { setTimeout(done, 400 + text.length * 50); return; }
-    const u = new SpeechSynthesisUtterance(text); u.rate = 1.15; u.onend = done; u.onerror = done;
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.35; u.onend = done; u.onerror = done;
     let f = false; const fin = () => { if (f) return; f = true; this.browserSpeaking = false; done(); };
     this.browserSpeaking = true; u.onend = fin; u.onerror = fin; setTimeout(fin, 2500 + text.length * 110);
     speechSynthesis.speak(u);
@@ -242,8 +242,8 @@ const VOICE = window.VOICE = {
     // 6 ms fade in/out removes clicks at the edges
     const f = Math.min(144, pcm.length >> 2); for (let i = 0; i < f; i++) { ch[i] *= i / f; ch[pcm.length - 1 - i] *= i / f; }
     const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
-    const t = Math.max(this.ctx.currentTime + 0.05, this.playEnd + 0.12); s.start(t); this.playEnd = t + buf.duration;
-    setTimeout(done, (this.playEnd - this.ctx.currentTime) * 1000 + 80);
+    const t = Math.max(this.ctx.currentTime + 0.03, this.playEnd + 0.04); s.start(t); this.playEnd = t + buf.duration;
+    setTimeout(done, (this.playEnd - this.ctx.currentTime) * 1000 + 20);
   },
   playing() { return !!this.browserSpeaking || (!!this.ctx && this.playEnd > 0 && this.playEnd + 0.35 > this.ctx.currentTime); },
   diag() {
