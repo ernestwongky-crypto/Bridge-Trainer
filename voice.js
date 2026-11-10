@@ -7,7 +7,7 @@ const K = { ear: 'bt.ear', mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', mo
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
 const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en' };
-const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good'];
+const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below'];
 const QUESTIONY = /\b(what|which|where|when|why|how|who|say again|repeat|confirm|any|anything|is|are|was|do|does|did|can|could|should|tell|give me|report|status|picture|closest|nearest|time to|ahead of|behind)\b/;
 
 const WORKLET = `class Cap extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=0;this.buf=new Int16Array(1600);this.n=0;this.on=true;this.port.onmessage=e=>{this.on=e.data}}
@@ -33,6 +33,7 @@ STYLE
 - Wording follows the RSN bridge voice procedure: lookout "Starboard, no near objects sighted, sir"; nav "Blind clear three zero zero up to three miles, fouled by land"; helm "Starboard fifteen. Fifteen of starboard wheel on, sir", "Steer three zero zero", "Midship. Wheel's amidship, sir".
 - Numbers digit by digit ("two five nine", "green four five", "two point five cables"). Never say "decimal" or "speed".
 - If the OOW's words are unclear, the right person says "say again".
+- Answer ONLY what the OOW asked, as the one person who would answer it, in one line. Never volunteer other reports, opinions or advice, and never mention contact ids or other data labels.
 
 You will get the recent bridge comms for context, then what the OOW just said. The OOW's words come from speech recognition and may contain small errors; interpret them as a naval officer would.`;
 
@@ -139,6 +140,8 @@ const VOICE = window.VOICE = {
     this.route(t);
   },
   route(text) {
+    // while a call-up waits for "OOW", a short line that isn't an order is your "OOW" misheard ("What would I do?")
+    if (typeof phase !== 'undefined' && phase === 'await' && cur && cur.call && text.trim().split(/\s+/).length <= 5 && !parseCommand(text).some(c => c.k !== 'ack')) { tr('heard_as_ack', { text }); handleUtterance('OOW', true); return; }
     if (sitrepFilter(text)) return; // sitrep words are logged, never answered
     const cmds = parseCommand(text);
     const bare = text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -185,6 +188,7 @@ const VOICE = window.VOICE = {
     }
   },
   speakLines(txt) {
+    txt = txt.replace(/[^.\n]*\bcontact (?:id )?\d+\b[^.\n]*\.?/gi, ''); // never read out internal labels
     const items = [];
     for (const raw of txt.split('\n')) {
       const m = raw.trim().match(/^(LOOKOUT|NAV|HELM)\s*:\s*(.+)$/i);

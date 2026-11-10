@@ -544,8 +544,8 @@ function parseCommand(raw) {
   for (const side of t.matchAll(/check (port|starboard|stern)/g)) out.push({ k: 'checkSide', side: side[1] }); // "check port, check starboard" answers both
   const cc = t.match(/check (?:course )?(\d{3})\b/); if (cc) out.push({ k: 'checkCourse', crs: +cc[1] % 360 });
   if (/\b(lookout|look out)\b/.test(t) || /\bbearing (movement|drift|check)\b/.test(t)) { const fu = t.match(/\b(green|red) (\d{1,3})\b/); out.push({ k: 'look', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null }); }
-  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t) || /\bcpa\b.*\b(?:below|under|less than|inside|within)\b/.test(t)) {
-    const trig = t.match(/(?:cpa )?trigger (?:at |of )?(\d+(?:\.\d+)?)/) || t.match(/\b(?:report|call|tell|inform)\b.*\bcpa\b.*\b(?:below|under|less than|inside|within)\s+(\d+(?:\.\d+)?)\s*cables?/);
+  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t) || /\bcpa\b.*\b(?:below|under|less than|lower than|inside|within|drops? to|falls? to)\b/.test(t)) {
+    const trig = t.match(/(?:cpa )?trigger (?:at |of )?(\d+(?:\.\d+)?)/) || t.match(/\bcpa\b.*\b(?:below|under|less than|lower than|inside|within|drops? to|falls? to)\s+(\d+(?:\.\d+)?)\b/);
     const fu = t.match(/\b(green|red) (\d{1,3})\b/);
     if (/\bcancel\b.*trigger|trigger (?:off|cancel)/.test(t)) out.push({ k: 'trigger', val: null });
     else if (trig) out.push({ k: 'trigger', val: +trig[1] });
@@ -657,7 +657,7 @@ function finish() { const then = cur && cur.then; cur = null; phase = 'idle'; if
    The loop closes on a helm or speed order, on a sitrep whose intention is to maintain
    course and speed, on "carry on", or by tapping the status bar. No timer. */
 const SITREP_QUIET_S = 8;
-const SITREP_RE = /\bsit\s?-?\s?reps?\b|\bsitrap\b|\bset rep\b|\bsea\s?-?\s?t?reps?\b|\bsea trip\b|\bsit trip\b|\bsitrip\b|\bsee trap\b|\bc rep\b/;
+const SITREP_RE = /\bsit\s?-?\s?reps?\b|\bsitrap\b|\bset rep\b|\bsea\s?-?\s?t?reps?\b|\bsea trip\b|\bsit trip\b|\bsitrip\b|\bsee trap\b|\bc rep\b|\bseat\s?reps?\b|\bsit\s?raps?\b|\bset\s?raps?\b|\bsea\s?rep\b/;
 const WOD_RE = /\bwatch\s?-?\s?on\s?-?\s?(?:the\s)?(?:deck|dec|dek|their|there)\b/;
 const LEAD_RE = /^\s*(watch\s?-?\s?on\s?-?\s?deck\s*)?(sit\s?-?\s?reps?|sitrap|set rep|sea\s?-?\s?t?reps?|sea trip|sit trip|sitrip|see trap|c rep)?\s*/;
 const MAINTAIN_RE = /\bmaintain\b|\bstand on\b|\bstanding on\b|\bhold (?:my |our |present )?course\b|\bno action\b/;
@@ -684,10 +684,16 @@ function sitrepFilter(text) {
   const marked = sNorm.some(isSitrepSentence);
   if (!S.sitrepOpen && !marked) {
     if (!cmds.length && /\b(port|starboard|stern|ahead|\d{3}) (is )?clear\b/.test(t)) { addLog('oow', text.trim()); return true; } // "starboard clear, 259 clear"
-    if ((led || !body) && !cmds.length) { addLog('oow', text.trim()); return true; } // "Roger", "Very good": acknowledgement only
+    if ((!body || (led && body.split(/\s+/).length <= 2)) && !cmds.length) { addLog('oow', text.trim()); return true; } // "Roger", "Very good": acknowledgement only
     const inLoop = S.loop && S.loop.stage === 'oow';
     // other words during an open loop that are neither an order nor a question: logged only, so the team doesn't talk over you
-    if (inLoop && !cmds.length && !QUESTION_START.test(t) && !/\?/.test(text)) { addLog('oow', text.trim()); return true; }
+    if (inLoop && !cmds.length && !QUESTION_START.test(t) && !/\?/.test(text)) {
+      addLog('oow', text.trim());
+      S.loop.said = (S.loop.said || '') + ' ' + t;
+      if (MAINTAIN_RE.test(S.loop.said)) { tr('loop_close_maintain'); closeLoop(); return true; }
+      if (body.split(/\s+/).length >= 3) S.loop.spokeAt = performance.now(); // you've said your piece: 12 s of quiet then moves on
+      return true;
+    }
     return false;
   }
   if (S.sitrepOpen && !marked && cmds.length) { closeSitrep(); return false; } // an order after the sitrep ends it and is acted on
@@ -713,6 +719,7 @@ function sitrepFilter(text) {
 }
 function closeSitrep() {
   S.sitrepOpen = false;
+  if (S.loop) S.loop.spokeAt = performance.now();
   if (S.loop && MAINTAIN_RE.test(S.sitrepText || '')) { closeLoop(); return; }
   setStatus(); setTimeout(pump, 100);
 }
@@ -1169,6 +1176,8 @@ function tick() {
   if (S.running && !S.paused) {
     let left = dt * S.scale; while (left > 0) { const h = Math.min(0.1, left); simStep(h); left -= h; }
     if (S.sitrepOpen) { S.sitrepQuiet -= dt; if (S.sitrepQuiet <= 0) closeSitrep(); } // real seconds
+    // stall guard: you spoke during the loop (not an order) and then 12 s of quiet: the team moves on
+    if (S.loop && S.loop.stage === 'oow' && S.loop.spokeAt && !S.sitrepOpen && now - S.loop.spokeAt > 12000) { tr('loop_close_quiet'); closeLoop(); }
   }
 }
 setInterval(tick, 100);
@@ -1304,6 +1313,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=sit3"></script>
+<script src="voice.js?v=run4"></script>
 </body>
 </html>
