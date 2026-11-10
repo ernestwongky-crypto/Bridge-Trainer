@@ -516,7 +516,7 @@ function normalise(raw) {
   let t = ' ' + raw.toLowerCase().replace(/[,.;!?]/g, ' ').replace(/-/g, ' ') + ' ';
   // ack variants before number conversion
   t = t.replace(/\b(o\s?o\s?w|o w|oh oh (?:w|double you)|o o double you|oww|ow|oow)\b/g, ' oow ');
-  t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b/g, 'starboard');
+  t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b|\bcheck star\b/g, m => m === 'check star' ? 'check starboard' : 'starboard');
   t = t.replace(/\b(navy|naff|nab|nev|knav|navigator|neff)\b/g, 'nav');
   const toks = t.trim().split(/\s+/).map(w => (w in NUMW ? String(NUMW[w]) : w));
   // merge "20 5" -> 25 (tens + unit)
@@ -538,7 +538,7 @@ function parseCommand(raw) {
   if (/\boow\b/.test(t)) out.push({ k: 'ack' });
   if (/\b(pause|freeze)\b/.test(t)) out.push({ k: 'pause' });
   if (/\b(resume|unfreeze|continue)\b/.test(t)) out.push({ k: 'resume' });
-  const side = t.match(/check (port|starboard)/); if (side) out.push({ k: 'checkSide', side: side[1] });
+  for (const side of t.matchAll(/check (port|starboard)/g)) out.push({ k: 'checkSide', side: side[1] }); // "check port, check starboard" answers both
   const cc = t.match(/check (?:course )?(\d{3})\b/); if (cc) out.push({ k: 'checkCourse', crs: +cc[1] % 360 });
   if (/\b(lookout|look out)\b/.test(t) || /\bbearing (movement|drift|check)\b/.test(t)) { const fu = t.match(/\b(green|red) (\d{1,3})\b/); out.push({ k: 'look', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null }); }
   if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t)) {
@@ -649,9 +649,9 @@ function finish() { const then = cur && cur.then; cur = null; phase = 'idle'; if
    The loop closes on a helm or speed order, on a sitrep whose intention is to maintain
    course and speed, on "carry on", or by tapping the status bar. No timer. */
 const SITREP_QUIET_S = 8;
-const SITREP_RE = /\bsit\s?-?\s?reps?\b|\bsitrap\b|\bset rep\b/;
+const SITREP_RE = /\bsit\s?-?\s?reps?\b|\bsitrap\b|\bset rep\b|\bsea\s?-?\s?t?reps?\b|\bsea trip\b|\bsit trip\b|\bsitrip\b|\bsee trap\b|\bc rep\b/;
 const WOD_RE = /\bwatch\s?-?\s?on\s?-?\s?deck\b/;
-const LEAD_RE = /^\s*(watch\s?-?\s?on\s?-?\s?deck\s*)?(sit\s?-?\s?reps?|sitrap|set rep)?\s*/;
+const LEAD_RE = /^\s*(watch\s?-?\s?on\s?-?\s?deck\s*)?(sit\s?-?\s?reps?|sitrap|set rep|sea\s?-?\s?t?reps?|sea trip|sit trip|sitrip|see trap|c rep)?\s*/;
 const MAINTAIN_RE = /\bmaintain\b|\bstand on\b|\bstanding on\b|\bhold (?:my |our |present )?course\b|\bno action\b/;
 const QUESTION_START = /^(what|which|where|when|why|how|who|say again|repeat|confirm|is|are|can|could|do|does|did|any|tell|give me)\b/;
 function openLoop(c) { S.loop = { c, stage: 'report' }; tr('loop_open', { contact: TYPES[c.type].name }); setStatus(); }
@@ -659,22 +659,35 @@ function loopToOOW() { if (S.loop) { S.loop.stage = 'oow'; setStatus(); } }
 function closeLoop() { if (!S.loop) return; tr('loop_close'); S.loop = null; S.sitrepOpen = false; S.nextScanAt = performance.now() + 1500; setStatus(); setTimeout(pump, 100); }
 const norm = text => text.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
 // Returns true when the words belong to the OOW's sitrep (logged, never answered).
+// Text after the closing "watch-on-deck" (e.g. "check port, check starboard") is handled as its own order.
+function afterClosingWOD(raw, skipLead) {
+  // same length as raw, so positions line up; find the last "watch on deck" after the opening one
+  const low = raw.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ');
+  const lead = skipLead ? (low.match(LEAD_RE) || [''])[0].length : 0;
+  let idx = -1, m; const g = /watch\s?-?\s?on\s?-?\s?deck/g;
+  while ((m = g.exec(low))) if (m.index >= lead) idx = m.index + m[0].length;
+  return idx < 0 ? null : raw.slice(idx).replace(/^[\s.,;!?-]+/, '').trim();
+}
 function sitrepFilter(text) {
   const t = norm(text);
   if (/\bcarry on\b/.test(t) && S.loop) { addLog('oow', text.trim()); S.sitrepOpen = false; closeLoop(); return true; }
-  const cmds = parseCommand(text).filter(c => c.k !== 'ack');
-  if (S.sitrepOpen) {
-    if (cmds.length) { closeSitrep(); return false; } // an order ends the sitrep and is acted on
-    S.sitrepText += ' ' + t; S.sitrepQuiet = SITREP_QUIET_S; addLog('oow', text.trim());
-    if (WOD_RE.test(t)) closeSitrep(); // the closing "watch-on-deck"
-    return true;
+  if (/^(roger|rodger|copy|noted|aye)\b/.test(t) && !S.sitrepOpen) { // an acknowledgement: logged, never answered
+    const cmds0 = parseCommand(text.replace(/^\s*\w+[\s,.]*/, '')).filter(c => c.k !== 'ack');
+    if (!cmds0.length && !SITREP_RE.test(t) && !WOD_RE.test(t)) { addLog('oow', text.trim()); return true; }
   }
-  const inLoop = S.loop && S.loop.stage === 'oow';
-  const opens = SITREP_RE.test(t) || (inLoop && (/^watch\s?-?\s?on\s?-?\s?deck\b/.test(t) || (!cmds.length && !QUESTION_START.test(t))));
-  if (!opens) return false;
-  S.sitrepOpen = true; S.sitrepText = t; S.sitrepQuiet = SITREP_QUIET_S;
-  addLog('oow', text.trim()); setStatus();
-  if (WOD_RE.test(t.replace(LEAD_RE, ''))) closeSitrep();
+  const cmds = parseCommand(text).filter(c => c.k !== 'ack');
+  let opening = false;
+  if (!S.sitrepOpen) {
+    const inLoop = S.loop && S.loop.stage === 'oow';
+    const opens = SITREP_RE.test(t) || /^watch\s?-?\s?on\s?-?\s?deck\b/.test(t) || (inLoop && !cmds.length && !QUESTION_START.test(t));
+    if (!opens) return false;
+    S.sitrepOpen = true; S.sitrepText = ''; opening = true;
+  } else if (cmds.length && !WOD_RE.test(t)) { closeSitrep(); return false; } // an order ends the sitrep and is acted on
+  const rest = afterClosingWOD(text, opening);
+  const said = rest == null ? text.trim() : text.slice(0, text.length - rest.length).trim();
+  S.sitrepText += ' ' + norm(said); S.sitrepQuiet = SITREP_QUIET_S;
+  addLog('oow', said); setStatus();
+  if (rest != null) { closeSitrep(); if (rest) setTimeout(() => (window.VOICE && VOICE.active ? VOICE.route(rest) : handleUtterance(rest, true)), 0); }
   return true;
 }
 function closeSitrep() {
@@ -1101,13 +1114,20 @@ function drawPlot(ctx, W, H, full) {
 
 /* ---------- UI wiring ---------- */
 function fitCanvas(cv) { const r = cv.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1); const w = Math.round(r.width * d), h = Math.round(r.height * d); if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; } const ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0); return [ctx, r.width, r.height]; }
-let lastFrame = 0;
-function frame(ts) {
-  const dt = lastFrame ? Math.min(0.25, (ts - lastFrame) / 1000) : 0; lastFrame = ts;
-  if (S.running && !S.paused) { let left = dt * S.scale; while (left > 0) { const h = Math.min(0.1, left); simStep(h); left -= h; } }
-  if (S.running && !S.paused) { // sitrep clocks run in real seconds, whatever the sim speed
-    if (S.sitrepOpen) { S.sitrepQuiet -= dt; if (S.sitrepQuiet <= 0) closeSitrep(); }
+// The drill clock runs on a timer, not on screen redraws: Chrome stops redrawing a covered
+// or background window, which used to freeze the ship and traffic while the voices carried on.
+let lastTick = 0;
+function tick() {
+  const now = performance.now(), dt = lastTick ? Math.min(10, (now - lastTick) / 1000) : 0; lastTick = now;
+  if (S.running && !S.paused) {
+    let left = dt * S.scale; while (left > 0) { const h = Math.min(0.1, left); simStep(h); left -= h; }
+    if (S.sitrepOpen) { S.sitrepQuiet -= dt; if (S.sitrepQuiet <= 0) closeSitrep(); } // real seconds
   }
+}
+setInterval(tick, 100);
+document.addEventListener('visibilitychange', () => tr('visibility', { state: document.visibilityState }));
+window.addEventListener('blur', () => tr('window_blur')); window.addEventListener('focus', () => tr('window_focus'));
+function frame(ts) {
   if (S.own) {
     const [vc, vw, vh] = fitCanvas($('view')); drawView(vc, vw, vh, ts);
     if (!$('plotWrap').hidden) { const [pc, pw, ph] = fitCanvas($('plot')); drawPlot(pc, pw, ph, false); }
@@ -1237,6 +1257,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=trace1"></script>
+<script src="voice.js?v=stream1"></script>
 </body>
 </html>

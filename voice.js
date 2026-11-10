@@ -155,19 +155,24 @@ const VOICE = window.VOICE = {
     if (f) now.followed_contact_reports = { nav_followup: navReport(), bow_crossing: bcrReport(), lookout: lookoutBearing(f) };
     const messages = [{ role: 'user', content: `Situation now:\n${JSON.stringify(now)}\n\nRecent bridge comms:\n${recent}\n\nThe OOW now says: "${text}"` }];
     try {
+      const model = store.get(K.model) || 'claude-haiku-5-5';
       for (let step = 0; step < 5; step++) {
         const t0 = performance.now(); tr('claude_req', { step });
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': store.get(K.cl), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({ model: store.get(K.model) || 'claude-haiku-5-5', max_tokens: 400, system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }], tools: TOOLS, messages })
+          body: JSON.stringify({ model, max_tokens: 1024, thinking: model.startsWith('claude-sonnet-5-5') ? { type: 'between_tools' } : { type: 'disabled' }, output_config: { effort: 'low' }, system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }], tools: TOOLS, messages })
         });
         const data = await res.json();
         tr('claude_res', { step, took_ms: Math.round(performance.now() - t0), stop: data.stop_reason, tools: (data.content || []).filter(b => b.type === 'tool_use').map(b => b.name), text: (data.content || []).filter(b => b.type === 'text').map(b => b.text).join(' | ') });
         if (!res.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + res.status));
         messages.push({ role: 'assistant', content: data.content });
         const uses = data.content.filter(b => b.type === 'tool_use');
-        if (!uses.length || data.stop_reason !== 'tool_use') { this.speakLines(data.content.filter(b => b.type === 'text').map(b => b.text).join('\n')); break; }
+        if (!uses.length || data.stop_reason !== 'tool_use') {
+          const said = data.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+          if (said) this.speakLines(said); else if (step === 0) this.speakLines('NAV: Say again, sir'); // never leave the OOW in silence
+          break;
+        }
         messages.push({ role: 'user', content: uses.map(u => ({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(this.tool(u.name, u.input || {})) })) });
       }
     } catch (e) {
@@ -220,12 +225,18 @@ const VOICE = window.VOICE = {
       if (typeof e.data === 'string') {
         let m; try { m = JSON.parse(e.data); } catch (err) { return; }
         if (m.type === 'Flushed') {
-          const it = ws.pending.shift(), parts = ws.parts || []; ws.parts = []; ws.carry = null;
-          if (it) { clearTimeout(it.guard); this.playUtterance(parts, it.done); }
+          const it = ws.pending.shift(), st = ws.st; ws.st = null;
+          if (st && st.buf.length) this.schedulePCM(st, st.buf.splice(0), !st.started);
+          const left = st && st.end ? Math.max(0, st.end - this.ctx.currentTime) : 0;
+          if (it) { clearTimeout(it.guard); setTimeout(it.done, left * 1000 + 20); }
         }
         return;
       }
-      (ws.parts = ws.parts || []).push(e.data);
+      // audio arrives in chunks: start playing once ~0.2 s is buffered, then play each chunk straight on
+      const st = ws.st || (ws.st = { buf: [], bytes: 0, started: false, end: 0, carry: null });
+      st.buf.push(e.data); st.bytes += e.data.byteLength;
+      if (st.started) this.schedulePCM(st, st.buf.splice(0), false);
+      else if (st.bytes >= 9600) { this.schedulePCM(st, st.buf.splice(0), true); st.started = true; }
     };
     ws.onclose = () => { ws.ok = false; ws.pending.splice(0).forEach(it => { clearTimeout(it.guard); it.done(); }); if (this.active) setTimeout(() => this.active && this.openTTS(who), 800); };
     this.tts[who] = ws;
@@ -249,23 +260,27 @@ const VOICE = window.VOICE = {
     this.browserSpeaking = true; u.onend = fin; u.onerror = fin; setTimeout(fin, 2500 + text.length * 110);
     speechSynthesis.speak(u);
   },
-  playUtterance(parts, done) {
-    // join the whole line first, so network gaps can't chop it up
-    let n = 0; for (const p of parts) n += p.byteLength;
-    let u8 = new Uint8Array(n), o = 0; for (const p of parts) { u8.set(new Uint8Array(p), o); o += p.byteLength; }
-    if (u8.length >= 44 && u8[0] === 82 && u8[1] === 73 && u8[2] === 70 && u8[3] === 70) u8 = u8.subarray(44);
-    if (u8.length % 2) u8 = u8.subarray(0, u8.length - 1);
-    if (!u8.length) { done(); return; }
+  // Schedule raw 16-bit PCM chunks back to back, sample-exact, so the line plays as one.
+  schedulePCM(st, parts, first) {
+    let n = st.carry ? 1 : 0; for (const p of parts) n += p.byteLength;
+    let u8 = new Uint8Array(n), o = 0;
+    if (st.carry) { u8[0] = st.carry[0]; o = 1; st.carry = null; }
+    for (const p of parts) { u8.set(new Uint8Array(p), o); o += p.byteLength; }
+    if (first && u8.length >= 44 && u8[0] === 82 && u8[1] === 73 && u8[2] === 70 && u8[3] === 70) u8 = u8.subarray(44);
+    if (u8.length % 2) { st.carry = u8.slice(u8.length - 1); u8 = u8.subarray(0, u8.length - 1); }
+    if (!u8.length) return;
     const pcm = new Int16Array(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.length));
     const buf = this.ctx.createBuffer(1, pcm.length, 24000), ch = buf.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
-    // 6 ms fade in/out removes clicks at the edges
-    const f = Math.min(144, pcm.length >> 2); for (let i = 0; i < f; i++) { ch[i] *= i / f; ch[pcm.length - 1 - i] *= i / f; }
+    if (first) { const f = Math.min(72, pcm.length >> 2); for (let i = 0; i < f; i++) ch[i] *= i / f; } // 3 ms fade-in
     const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
-    const t = Math.max(this.ctx.currentTime + 0.03, this.playEnd + 0.04); s.start(t); this.playEnd = t + buf.duration;
-    tr('audio_start', { in_ms: Math.round((t - this.ctx.currentTime) * 1000), dur_ms: Math.round(buf.duration * 1000) });
-    if (this.tHeard) { this.lastLag = (performance.now() - this.tHeard) / 1000 + (t - this.ctx.currentTime); this.tHeard = null; }
-    setTimeout(done, (this.playEnd - this.ctx.currentTime) * 1000 + 20);
+    const now = this.ctx.currentTime;
+    const t = first || !st.end ? Math.max(now + 0.03, this.playEnd + 0.04) : Math.max(st.end, now + 0.01);
+    s.start(t); st.end = t + buf.duration; this.playEnd = Math.max(this.playEnd, st.end);
+    if (first) {
+      tr('audio_start', { in_ms: Math.round((t - now) * 1000) });
+      if (this.tHeard) { this.lastLag = (performance.now() - this.tHeard) / 1000 + (t - now); this.tHeard = null; }
+    }
   },
   playing() { return !!this.browserSpeaking || (!!this.ctx && this.playEnd > 0 && this.playEnd + 0.35 > this.ctx.currentTime); },
   diag() {
