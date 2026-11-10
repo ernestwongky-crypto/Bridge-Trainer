@@ -72,15 +72,19 @@ const VOICE = window.VOICE = {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
       const url = URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }));
       await this.ctx.audioWorklet.addModule(url);
+      try { await this.ctx.resume(); } catch (e) { }
+      this.ctx.onstatechange = () => { if (this.active && this.ctx.state !== 'running') this.ctx.resume().catch(() => { }); };
       const src = this.ctx.createMediaStreamSource(this.stream);
+      this.an = this.ctx.createAnalyser(); this.an.fftSize = 512; src.connect(this.an);
       this.node = new AudioWorkletNode(this.ctx, 'cap');
-      this.node.port.onmessage = e => { if (this.stt && this.stt.readyState === 1) this.stt.send(e.data); };
+      this.node.port.onmessage = e => { this.chunks = (this.chunks || 0) + 1; if (this.stt && this.stt.readyState === 1) { this.stt.send(e.data); this.sent = (this.sent || 0) + 1; } };
       const sink = this.ctx.createGain(); sink.gain.value = 0;
       src.connect(this.node); this.node.connect(sink); sink.connect(this.ctx.destination);
     } catch (e) { this.fail('Microphone not available (' + (e.message || e.name) + '). Allow the microphone for this site and start again.'); return; }
     this.openSTT();
     ['lookout', 'nav', 'helm'].forEach(r => this.openTTS(r));
     this.gate = setInterval(() => { const quiet = !this.playing(); if (this.node) this.node.port.postMessage(quiet && !this.muted); }, 80);
+    this.diagT = setInterval(() => this.diag(), 250);
   },
 
   /* ---------- ears ---------- */
@@ -94,6 +98,7 @@ const VOICE = window.VOICE = {
     ws.onopen = () => { opened = true; this.sttFails = 0; this.status(this.muted ? 'Call on · muted' : 'Call on · listening', 'ok'); };
     ws.onmessage = e => { try { this.onSTT(JSON.parse(e.data)); } catch (err) { } };
     ws.onclose = ev => {
+      this.sttClose = (ev.code || '') + (ev.reason ? ' ' + ev.reason : '');
       if (!this.active) return;
       this.sttFails = (this.sttFails || 0) + 1;
       if (!opened && this.sttFails >= 2) { this.fail('Deepgram refused the connection. Check the Deepgram key on the start screen.'); return; }
@@ -102,6 +107,7 @@ const VOICE = window.VOICE = {
     this.stt = ws;
   },
   onSTT(m) {
+    this.msgs = (this.msgs || 0) + 1;
     if (this.playing()) { if (m.type === 'Results' && m.is_final) this.words = ''; return; }
     if (m.type === 'Results') {
       const t = (m.channel && m.channel.alternatives && m.channel.alternatives[0] && m.channel.alternatives[0].transcript) || '';
@@ -209,7 +215,8 @@ const VOICE = window.VOICE = {
   browserSay(who, text, done) {
     if (!('speechSynthesis' in window)) { setTimeout(done, 400 + text.length * 50); return; }
     const u = new SpeechSynthesisUtterance(text); u.rate = 1.15; u.onend = done; u.onerror = done;
-    this.browserSpeaking = true; const fin = () => { this.browserSpeaking = false; done(); }; u.onend = fin; u.onerror = fin;
+    let f = false; const fin = () => { if (f) return; f = true; this.browserSpeaking = false; done(); };
+    this.browserSpeaking = true; u.onend = fin; u.onerror = fin; setTimeout(fin, 2500 + text.length * 110);
     speechSynthesis.speak(u);
   },
   playPCM(ab, ws) {
@@ -224,13 +231,22 @@ const VOICE = window.VOICE = {
     const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
     const t = Math.max(this.ctx.currentTime + 0.04, this.playEnd); s.start(t); this.playEnd = t + buf.duration;
   },
-  playing() { return this.browserSpeaking || (this.ctx && this.playEnd + 0.35 > this.ctx.currentTime); },
+  playing() { return !!this.browserSpeaking || (!!this.ctx && this.playEnd > 0 && this.playEnd + 0.35 > this.ctx.currentTime); },
+  diag() {
+    const d = document.getElementById('diag'); if (!d || !this.active) return;
+    let lvl = 0;
+    if (this.an) { const a = new Uint8Array(this.an.fftSize); this.an.getByteTimeDomainData(a); let m = 0; for (const v of a) m = Math.max(m, Math.abs(v - 128)); lvl = Math.min(8, Math.round(m / 8)); }
+    const bars = '\u2588'.repeat(lvl) + '\u2591'.repeat(8 - lvl);
+    const stt = !this.stt ? 'off' : ['connecting', 'connected', 'closing', 'closed ' + (this.sttClose || '')][this.stt.readyState];
+    const tts = ['lookout', 'nav', 'helm'].filter(r => this.tts[r] && this.tts[r].readyState === 1).length;
+    d.textContent = `Mic ${bars} · Audio ${this.ctx ? this.ctx.state : 'none'} · Ears ${stt} (${this.sent || 0} sent, ${this.msgs || 0} back) · Voices ${tts}/3${this.playing() ? ' · team talking' : ''}${this.muted ? ' · muted' : ''}`;
+  },
 
   setMute(m) { this.muted = m; const b = el('bCallMute'); if (b) { b.setAttribute('aria-pressed', m); b.textContent = m ? 'Unmute' : 'Mute'; } if (this.active) this.status(m ? 'Call on · muted' : 'Call on · listening', 'ok'); },
   fail(msg) { addLog('sys', msg); this.stop(); this.status('Call off', 'bad'); },
   stop() {
     if (!this.active) return;
-    this.active = false; clearInterval(this.gate);
+    this.active = false; clearInterval(this.gate); clearInterval(this.diagT);
     try { this.stt && this.stt.send(JSON.stringify({ type: 'CloseStream' })); } catch (e) { }
     try { this.stt && this.stt.close(); } catch (e) { }
     Object.values(this.tts).forEach(ws => { try { ws.close(); } catch (e) { } }); this.tts = {};
