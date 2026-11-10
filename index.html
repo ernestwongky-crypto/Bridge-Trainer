@@ -589,9 +589,13 @@ function pickVoices() {
 }
 if ('speechSynthesis' in window) { pickVoices(); speechSynthesis.onvoiceschanged = pickVoices; }
 const ROLE = { lookout: 'Lookout', nav: 'Nav', helm: 'Helm', oow: 'OOW', sys: 'Drill' };
+/* ---------- trace: every step with a timestamp, read back after a run (window.BT_TRACE) ---------- */
+const TRACE = window.BT_TRACE = [];
+function tr(ev, d) { try { TRACE.push(Object.assign({ ms: Math.round(performance.now()), sim: fmtT(S.t), ev }, d || {})); if (TRACE.length > 4000) TRACE.shift(); } catch (e) { } }
+window.tr = tr;
 let talking = 0;
 function speak(who, text, cb) {
-  addLog(who, text);
+  addLog(who, text); tr('say', { who, text });
   talking++; if (typeof muteMic === 'function') muteMic();
   const done = (() => { let f = false; return () => { if (!f) { f = true; talking = Math.max(0, talking - 1); if (!talking && typeof unmuteMic === 'function') setTimeout(unmuteMic, 300); cb && cb(); } }; })();
   if (window.VOICE && VOICE.active) { VOICE.say(who, text, done); return; }
@@ -632,6 +636,7 @@ function pump() {
 function afterCall() { phase = 'await'; if (cur && cur.acked) { cur.acked = false; onAck(true); } else { armAck(); setStatus(); pump(); } }
 function armAck() { clearTimeout(ackTimer); ackTimer = setTimeout(() => { if (phase === 'await' && cur) { phase = 'speaking'; speak(cur.who, 'OOW sir, ' + cur.who, afterCall); } }, 9000); }
 function onAck(silent) {
+  tr('ack', { phase, waiting: cur ? cur.who : null, silent: !!silent });
   if (!silent) addLog('oow', 'OOW');
   if ((phase === 'aside' || (phase === 'speaking' && cur && cur.call && !cur.inBody)) && cur) { cur.acked = true; return; }
   if (phase !== 'await' || !cur) return;
@@ -649,9 +654,9 @@ const WOD_RE = /\bwatch\s?-?\s?on\s?-?\s?deck\b/;
 const LEAD_RE = /^\s*(watch\s?-?\s?on\s?-?\s?deck\s*)?(sit\s?-?\s?reps?|sitrap|set rep)?\s*/;
 const MAINTAIN_RE = /\bmaintain\b|\bstand on\b|\bstanding on\b|\bhold (?:my |our |present )?course\b|\bno action\b/;
 const QUESTION_START = /^(what|which|where|when|why|how|who|say again|repeat|confirm|is|are|can|could|do|does|did|any|tell|give me)\b/;
-function openLoop(c) { S.loop = { c, stage: 'report' }; setStatus(); }
+function openLoop(c) { S.loop = { c, stage: 'report' }; tr('loop_open', { contact: TYPES[c.type].name }); setStatus(); }
 function loopToOOW() { if (S.loop) { S.loop.stage = 'oow'; setStatus(); } }
-function closeLoop() { if (!S.loop) return; S.loop = null; S.sitrepOpen = false; S.nextScanAt = performance.now() + 1500; setStatus(); setTimeout(pump, 100); }
+function closeLoop() { if (!S.loop) return; tr('loop_close'); S.loop = null; S.sitrepOpen = false; S.nextScanAt = performance.now() + 1500; setStatus(); setTimeout(pump, 100); }
 const norm = text => text.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
 // Returns true when the words belong to the OOW's sitrep (logged, never answered).
 function sitrepFilter(text) {
@@ -826,9 +831,10 @@ function stepOwn(dt) { // dt seconds
 function handleUtterance(text, fromVoice) {
   if (window.VOICE && VOICE.active && !fromVoice) { VOICE.route(text); return; }
   if ((window.LIVE && LIVE.active) && !fromVoice) { LIVE.userText(text); return; }
-  if (sitrepFilter(text)) return;
+  tr('handle', { text, fromVoice: !!fromVoice });
+  if (sitrepFilter(text)) { tr('as_sitrep', { text }); return; }
   const cmds = parseCommand(text);
-  if (!cmds.length) { addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
+  if (!cmds.length) { tr('not_understood', { text }); addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
   if (!(cmds.length === 1 && cmds[0].k === 'ack')) addLog('oow', text);
   const replies = []; // direct answers, spoken in order before queued call-ups
   const reply = (who, fn) => replies.push({ who, call: false, body: fn });
@@ -1117,6 +1123,7 @@ function frame(ts) {
 function setPaused(p) { S.paused = p; $('bPause').textContent = p ? 'Resume' : 'Pause'; $('bPause').setAttribute('aria-pressed', p); if (p && 'speechSynthesis' in window) { } }
 function setScale(s) { S.scale = s; document.querySelectorAll('[data-scale]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.scale === s)); }
 function startDrill() {
+  TRACE.length = 0;
   S.tod = document.querySelector('input[name=tod]:checked').value;
   S.voiceOut = $('optVoice').checked;
   S.seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
@@ -1230,6 +1237,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=fast1"></script>
+<script src="voice.js?v=trace1"></script>
 </body>
 </html>

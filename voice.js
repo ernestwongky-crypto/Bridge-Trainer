@@ -123,13 +123,13 @@ const VOICE = window.VOICE = {
   },
   onSTT(m) {
     this.msgs = (this.msgs || 0) + 1;
-    if (this.playing() && !earOn()) { if (m.type === 'Results' && m.is_final) this.words = ''; return; }
+    if (this.playing() && !earOn()) { if (m.type === 'Results' && m.is_final) { tr('stt_dropped', { text: this.words }); this.words = ''; } return; }
     if (m.type === 'Results') {
       const t = (m.channel && m.channel.alternatives && m.channel.alternatives[0] && m.channel.alternatives[0].transcript) || '';
-      if (m.is_final && t) this.words += (this.words ? ' ' : '') + t;
+      if (m.is_final && t) { this.words += (this.words ? ' ' : '') + t; tr('stt_final', { text: t, speech_final: !!m.speech_final, team_talking: this.playing() }); }
       this.heard('Heard: ' + (this.words + (m.is_final ? '' : ' ' + t)).trim());
       if (m.speech_final) this.endUtterance();
-    } else if (m.type === 'UtteranceEnd') this.endUtterance();
+    } else if (m.type === 'UtteranceEnd') { tr('stt_utterance_end'); this.endUtterance(); }
   },
   endUtterance() {
     this.tHeard = performance.now();
@@ -142,6 +142,7 @@ const VOICE = window.VOICE = {
     const cmds = parseCommand(text);
     const bare = text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
     const simple = cmds.length && !(QUESTIONY.test(bare) && !cmds.every(c => c.k === 'ack'));
+    tr('route', { text, to: simple || !this.hasClaude() ? 'local' : 'claude' });
     if (simple || !this.hasClaude()) handleUtterance(text, true);
     else { addLog('oow', text); this.ask(text); }
   },
@@ -155,12 +156,14 @@ const VOICE = window.VOICE = {
     const messages = [{ role: 'user', content: `Situation now:\n${JSON.stringify(now)}\n\nRecent bridge comms:\n${recent}\n\nThe OOW now says: "${text}"` }];
     try {
       for (let step = 0; step < 5; step++) {
+        const t0 = performance.now(); tr('claude_req', { step });
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': store.get(K.cl), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({ model: store.get(K.model) || 'claude-haiku-5-5', max_tokens: 400, system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }], tools: TOOLS, messages })
         });
         const data = await res.json();
+        tr('claude_res', { step, took_ms: Math.round(performance.now() - t0), stop: data.stop_reason, tools: (data.content || []).filter(b => b.type === 'tool_use').map(b => b.name), text: (data.content || []).filter(b => b.type === 'text').map(b => b.text).join(' | ') });
         if (!res.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + res.status));
         messages.push({ role: 'assistant', content: data.content });
         const uses = data.content.filter(b => b.type === 'tool_use');
@@ -168,6 +171,7 @@ const VOICE = window.VOICE = {
         messages.push({ role: 'user', content: uses.map(u => ({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(this.tool(u.name, u.input || {})) })) });
       }
     } catch (e) {
+      tr('claude_error', { msg: String(e.message || e) });
       addLog('sys', 'Claude unavailable: ' + e.message + '. Set orders still work.');
     } finally {
       this.thinking--; if (this.active) this.status(this.muted ? 'Call on · muted' : 'Call on · listening', 'ok');
@@ -259,6 +263,7 @@ const VOICE = window.VOICE = {
     const f = Math.min(144, pcm.length >> 2); for (let i = 0; i < f; i++) { ch[i] *= i / f; ch[pcm.length - 1 - i] *= i / f; }
     const s = this.ctx.createBufferSource(); s.buffer = buf; s.connect(this.ctx.destination);
     const t = Math.max(this.ctx.currentTime + 0.03, this.playEnd + 0.04); s.start(t); this.playEnd = t + buf.duration;
+    tr('audio_start', { in_ms: Math.round((t - this.ctx.currentTime) * 1000), dur_ms: Math.round(buf.duration * 1000) });
     if (this.tHeard) { this.lastLag = (performance.now() - this.tHeard) / 1000 + (t - this.ctx.currentTime); this.tHeard = null; }
     setTimeout(done, (this.playEnd - this.ctx.currentTime) * 1000 + 20);
   },
