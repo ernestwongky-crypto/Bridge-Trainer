@@ -121,6 +121,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .callrow { display: none; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 body.incall .callrow { display: grid; }
 body.incall .microw, body.incall #micNote { display: none; }
+.vgrid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+.vgrid label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.vgrid select { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px; min-width: 0; }
+.kstate { font-weight: 700; color: var(--port); } .kstate.ok { color: var(--stbd); }
+.heard { margin: 0; color: var(--muted); font-size: 13px; font-family: var(--f-data); }
+body:not(.incall) .heard { display: none; }
 .callpill { font-weight: 700; padding: 10px 12px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); }
 .callpill.ok { color: var(--stbd); border-color: var(--stbd); }
 .callpill.wait { color: var(--accent); border-color: var(--accent); }
@@ -174,18 +180,17 @@ td.bad { color: var(--port); }
         <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="optVoice" checked> Spoken reports</label>
       </div>
       <div id="callSetup" class="callsetup" hidden>
-        <label class="calltoggle"><input type="checkbox" id="optCall" disabled> <span><b>Voice call</b> · talk naturally, no Talk button (Gemini)</span></label>
-        <div class="keyrow">
-          <input id="inKey" type="password" autocomplete="off" placeholder="Paste Gemini API key" aria-label="Gemini API key">
-          <button id="bSaveKey" type="button">Save key</button>
+        <label class="calltoggle"><input type="checkbox" id="optCall" disabled> <span><b>Voice call</b> · talk naturally, Claude runs the bridge team</span></label>
+        <div class="keyrow"><input id="inDg" type="password" autocomplete="off" placeholder="Deepgram API key (ears and voices)" aria-label="Deepgram API key"><button id="bSaveDg" type="button">Save</button></div>
+        <div class="keyrow"><input id="inCl" type="password" autocomplete="off" placeholder="Claude API key (brain)" aria-label="Claude API key"><button id="bSaveCl" type="button">Save</button></div>
+        <p class="note">Deepgram key: <span id="dgState" class="kstate"></span> · Claude key: <span id="clState" class="kstate"></span> · <button id="bClearKeys" type="button" class="linkbtn">Remove keys</button></p>
+        <div class="vgrid">
+          <label for="inModel">Brain</label><select id="inModel"><option value="claude-haiku-5-5">Claude Haiku 5.5 (fastest)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (sharper, slower)</option></select>
+          <label for="inVLook">Lookout</label><select id="inVLook"><option value="aura-2-orion-en">Orion</option><option value="aura-2-arcas-en">Arcas</option><option value="aura-2-apollo-en">Apollo</option><option value="aura-2-draco-en">Draco</option><option value="aura-2-hyperion-en">Hyperion</option><option value="aura-2-zeus-en">Zeus</option></select>
+          <label for="inVNav">Nav</label><select id="inVNav"><option value="aura-2-arcas-en">Arcas</option><option value="aura-2-orion-en">Orion</option><option value="aura-2-apollo-en">Apollo</option><option value="aura-2-draco-en">Draco</option><option value="aura-2-hyperion-en">Hyperion</option><option value="aura-2-zeus-en">Zeus</option></select>
+          <label for="inVHelm">Helm</label><select id="inVHelm"><option value="aura-2-apollo-en">Apollo</option><option value="aura-2-orion-en">Orion</option><option value="aura-2-arcas-en">Arcas</option><option value="aura-2-draco-en">Draco</option><option value="aura-2-hyperion-en">Hyperion</option><option value="aura-2-zeus-en">Zeus</option></select>
         </div>
-        <div class="keyrow2">
-          <span id="keyState" class="note"></span>
-          <label class="note" for="inVoice">Voice</label>
-          <select id="inVoice"><option>Charon</option><option>Fenrir</option><option>Orus</option><option>Puck</option><option>Kore</option></select>
-          <button id="bClearKey" type="button" class="linkbtn">Remove key</button>
-        </div>
-        <p class="note">Get a key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. It is stored only in this browser and sent only to Google. Earphones give the cleanest call.</p>
+        <p class="note">Keys stay only in this browser and go only to Deepgram and Anthropic. Set orders are handled instantly; questions and free phrasing go to Claude. Earphones give the cleanest call.</p>
       </div>
       <button id="bStart">Start drill</button>
       <p class="note"><b>Voice orders:</b> with Voice call on, just talk. Without it, press Talk (or the space bar on a laptop); Hands-free keeps the mic open and pauses it while the team speaks.</p>
@@ -236,6 +241,7 @@ td.bad { color: var(--port); }
           </div>
           <p id="micNote" hidden></p>
           <div class="callrow"><span id="callPill" class="callpill" hidden></span><button id="bCallMute" aria-pressed="false">Mute</button></div>
+          <p id="heard" class="heard" hidden></p>
           <div class="sect"><span class="lbl">Calls</span>
             <div class="grid5">
               <button id="bAck">OOW</button><button id="bNav">Nav</button><button id="bBcr">BCR</button>
@@ -584,6 +590,7 @@ function speak(who, text, cb) {
   addLog(who, text);
   talking++; if (typeof muteMic === 'function') muteMic();
   const done = (() => { let f = false; return () => { if (!f) { f = true; talking = Math.max(0, talking - 1); if (!talking && typeof unmuteMic === 'function') setTimeout(unmuteMic, 300); cb && cb(); } }; })();
+  if (window.VOICE && VOICE.active) { VOICE.say(who, text, done); return; }
   if (!S.voiceOut || !('speechSynthesis' in window)) { setTimeout(done, 500 + text.length * 45); return; }
   try {
     const u = new SpeechSynthesisUtterance(text);
@@ -757,6 +764,7 @@ function stepOwn(dt) { // dt seconds
 
 /* ---------- command handling ---------- */
 function handleUtterance(text, fromVoice) {
+  if (window.VOICE && VOICE.active && !fromVoice) { VOICE.route(text); return; }
   if ((window.LIVE && LIVE.active) && !fromVoice) { LIVE.userText(text); return; }
   const cmds = parseCommand(text);
   if (!cmds.length) { addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
@@ -1056,11 +1064,13 @@ function startDrill() {
   S.running = true; setPaused(false); setScale(1);
   if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch (e) { } }
   if (window.LIVE && LIVE.wanted()) { LIVE.start(); return; }
+  if (window.VOICE && VOICE.wanted()) VOICE.start();
   speak('sys', 'Drill start. Own ship course one eight zero, twelve knots.', () => { });
   setTimeout(pump, 2500);
 }
 function endDrill() {
   if (window.LIVE) LIVE.stop();
+  if (window.VOICE) VOICE.stop();
   S.ended = true; S.running = false; setPaused(true); clearTimeout(ackTimer); if ('speechSynthesis' in window) speechSynthesis.cancel();
   $('debrief').hidden = false;
   const rows = S.contacts.concat(S.past).filter((c, i, a) => a.indexOf(c) === i && c.firstRb != null && c.minR != null).sort((a, b) => a.minRt - b.minRt);
@@ -1155,6 +1165,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script type="module" src="live.js"></script>
+<script src="voice.js"></script>
 </body>
 </html>
