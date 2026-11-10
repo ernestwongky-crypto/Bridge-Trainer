@@ -142,7 +142,7 @@ td.bad { color: var(--port); }
         <label style="display:flex;gap:8px;align-items:center;font-weight:600"><input type="checkbox" id="optVoice" checked> Spoken reports</label>
       </div>
       <button id="bStart">Start drill</button>
-      <p class="note"><b>Voice orders:</b> press Talk (or the space bar on a laptop) and allow the microphone when asked. Hands-free keeps the mic open for the whole drill. Needs an internet connection.</p>
+      <p class="note"><b>Voice orders:</b> press Talk (or the space bar on a laptop) and allow the microphone when asked. Hands-free keeps the mic open for the whole drill. If Talk doesn’t work on your phone, tap the order box and use the keyboard’s dictation mic, then Send.</p>
       <p class="note">Traffic is different every run. Geography is approximate, traced from a public MPA chart, and not for navigation.</p>
     </div>
   </section>
@@ -974,33 +974,36 @@ function endDrill() {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, handsFree = false;
 function micNote(t) { $('micNote').textContent = t; $('micNote').hidden = !t; }
-const BLOCKED = 'The microphone is blocked. Allow microphone access for this site in your browser settings and reload, or use the buttons and typed orders.';
-let startWatch = null, heard = false;
-function micBlocked(why) {
-  handsFree = false; listening = false; clearTimeout(startWatch);
-  $('bMic').classList.remove('on'); $('bMic').querySelector('span').textContent = 'Mic blocked';
-  $('bMic').disabled = true; $('bHands').disabled = true; $('bHands').setAttribute('aria-pressed', false);
-  micNote(why || BLOCKED);
-}
+const BLOCKED = 'The microphone is blocked inside the Claude app, so voice orders can\u2019t reach the drill here. Use the OOW, Nav and wheel buttons or type orders. For voice, open the page in a normal browser (see the note under Start).';
+let startWatch = null, gotAudio = false;
+function micIdle(label) { listening = false; $('bMic').classList.remove('on'); $('bMic').querySelector('span').textContent = label || 'Talk'; }
+function micBlocked(why) { handsFree = false; $('bHands').setAttribute('aria-pressed', false); clearTimeout(startWatch); micIdle('Talk'); micNote(why || BLOCKED); }
 function initMic() {
-  if (!SR) { micBlocked('Voice input isn\u2019t available in this browser. Use the buttons or type orders. Chrome on a laptop or Android supports voice.'); return; }
-  rec = new SR(); rec.lang = 'en-GB'; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
-  rec.onstart = () => { heard = true; clearTimeout(startWatch); micNote(''); };
-  rec.onresult = e => { const t = e.results[e.results.length - 1][0].transcript; handleUtterance(t, true); };
-  rec.onerror = e => {
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') micBlocked();
-    else if (e.error === 'network') micBlocked('Voice recognition needs an internet connection to Google\u2019s speech service, and it couldn\u2019t reach it. Use the buttons or type orders.');
-    else if (e.error === 'no-speech') micNote('Didn\u2019t catch that. Press Talk and give the order right away.');
+  if (!SR) { $('bMic').disabled = true; $('bHands').disabled = true; micNote('Voice input isn\u2019t available in this browser. Tip: tap the order box and use your keyboard\u2019s dictation mic, then Send.'); return; }
+  rec = new SR(); rec.lang = 'en-GB'; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+  rec.onstart = () => { clearTimeout(startWatch); micNote('Listening\u2026 speak now.'); };
+  rec.onaudiostart = () => { gotAudio = true; };
+  rec.onresult = e => {
+    const r = e.results[e.results.length - 1], t = r[0].transcript;
+    if (!r.isFinal) { micNote('Heard: ' + t); return; }
+    micNote('Heard: ' + t); handleUtterance(t, true);
   };
-  rec.onend = () => { listening = false; if (!$('bMic').disabled) { $('bMic').classList.remove('on'); $('bMic').querySelector('span').textContent = 'Talk'; } if (handsFree && S.running) setTimeout(listen, 200); };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') micBlocked(location.hostname.endsWith('github.io') ? 'Microphone or speech recognition is not allowed. iPhone: Settings \u2192 Apps \u2192 Safari \u2192 Microphone \u2192 Allow, and turn on Settings \u2192 General \u2192 Keyboard \u2192 Enable Dictation. Then reload.' : BLOCKED);
+    else if (e.error === 'audio-capture') micBlocked('No microphone found or it is in use by another app.');
+    else if (e.error === 'network') micNote('Speech service unreachable (network). Check your connection and press Talk again.');
+    else if (e.error === 'no-speech') micNote('Didn\u2019t catch anything. Press Talk, then speak straight away.');
+    else if (e.error !== 'aborted') micNote('Voice error: ' + e.error + '. Press Talk to try again.');
+  };
+  rec.onend = () => { micIdle(); if (handsFree && S.running) setTimeout(listen, 250); };
 }
 function listen() {
-  if (!rec || listening || $('bMic').disabled) return;
+  if (!rec || listening) return;
   try {
     rec.start(); listening = true; $('bMic').classList.add('on'); $('bMic').querySelector('span').textContent = 'Listening';
     clearTimeout(startWatch);
-    startWatch = setTimeout(() => { if (!heard) { try { rec.abort(); } catch (e) { } micBlocked(); } }, 2500);
-  } catch (e) { micBlocked(); }
+    startWatch = setTimeout(() => { if (listening) micNote('Waiting for the microphone\u2026 if your browser asked for permission, tap Allow.'); }, 2500);
+  } catch (e) { micNote('Could not start the microphone (' + e.message + '). Press Talk again.'); micIdle(); }
 }
 function stopListen() { if (rec && listening) rec.stop(); }
 
