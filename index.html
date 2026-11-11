@@ -547,6 +547,7 @@ function normalise(raw) {
   return m2.join(' ').replace(/(\d+) point (\d+)/g, '$1.$2');
 }
 const CO_RE = /\bco\b.*\b(sir|request|permission|deviat\w*|cables?)\b|\bcaptain\b.*\b(sir|request|permission|deviat\w*)\b/;
+const MID_RE = /\b(?:mid|meet|mit|met|mead|mi) ?-?(?:ships?|chips?|ship's|shit|you)\b|\bmidshipman\b/;
 const TRACK_RE = /\b(on|off) track\b|\bpi line\b|\bcross track\b|\bhow far (?:off|from) (?:the )?track\b/;
 const WO_RE = /\bwheelover\b|\bw ?o\b/;
 function isCoRequest(raw) { return CO_RE.test(' ' + normalise(raw) + ' '); }
@@ -571,8 +572,9 @@ function parseCommand(raw) {
     else out.push({ k: 'nav', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null, followUp: /follow/.test(t) });
   }
   const rud = t.match(/\b(port|starboard) (\d{1,2})\b/);
+  // midship and how the mic mishears it (11-11: "meet ship", "meet you"); the OOW never says "meet her" in his scripts
   const steer = t.match(/\bsteer (\d{3})\b/) || t.match(/\bcourse (\d{3})\b(?!.*check)/);
-  if (/\bmid ?ships?\b/.test(t)) { out.push({ k: 'helm', rud: 0, mid: true }); if (steer && !cc) out.push({ k: 'helm', side: null, rud: null, crs: +steer[1] % 360 }); } // "Midship. Steer 259."
+  if (MID_RE.test(t)) { out.push({ k: 'helm', rud: 0, mid: true }); if (steer && !cc) out.push({ k: 'helm', side: null, rud: null, crs: +steer[1] % 360 }); } // "Midship. Steer 259."
   else if (/\b(steady|meet her)\b/.test(t)) out.push({ k: 'helm', steady: true });
   else if (rud || (steer && !cc)) out.push({ k: 'helm', side: rud ? rud[1] : null, rud: rud ? Math.min(35, +rud[2]) : null, crs: steer ? +steer[1] % 360 : null });
   const sp = t.match(/(\d{1,2}(?:\.\d)?) knots/); if (sp && !/\bnav\b/.test(t)) out.push({ k: 'speed', v: Math.min(30, +sp[1]) });
@@ -1443,6 +1445,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=legs1"></script>
+<script src="voice.js?v=mid2"></script>
 </body>
 </html>

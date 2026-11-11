@@ -7,7 +7,7 @@ const K = { ear: 'bt.ear', mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', mo
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
 const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en', co: 'aura-2-zeus-en' };
-const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below', 'PI line', 'on track', 'off track', 'wheelover', 'range to wheelover', 'CO sir', 'deviation', 'report CPA', 'harbour launch', 'pilot vessel'];
+const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midship', 'midships', 'amidship', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below', 'PI line', 'on track', 'off track', 'wheelover', 'range to wheelover', 'CO sir', 'deviation', 'report CPA', 'harbour launch', 'pilot vessel'];
 const QUESTIONY = /\b(what|which|where|when|why|how|who|say again|repeat|confirm|any|anything|is|are|was|do|does|did|can|could|should|tell|give me|report|status|picture|closest|nearest|time to|ahead of|behind)\b/;
 
 const WORKLET = `class Cap extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=0;this.buf=new Int16Array(1600);this.n=0;this.on=true;this.port.onmessage=e=>{this.on=e.data}}
@@ -197,12 +197,15 @@ const VOICE = window.VOICE = {
   },
   speakLines(txt) {
     txt = txt.replace(/[^.\n]*\bcontact (?:id )?\d+\b[^.\n]*\.?/gi, ''); // never read out internal labels
-    const items = [];
+    const items = []; let tagged = 0;
     for (const raw of txt.split('\n')) {
       const m = raw.trim().match(/^(LOOKOUT|NAV|HELM)\s*:\s*(.+)$/i);
-      if (m) items.push({ who: m[1].toLowerCase(), text: m[2].trim() });
+      if (m) tagged++;
+      if (m && !/^none\.?$/i.test(m[2].trim())) items.push({ who: m[1].toLowerCase(), text: m[2].trim() });
     }
-    if (!items.length && txt.trim() && !/^NONE$/i.test(txt.trim())) items.push({ who: 'nav', text: txt.trim() });
+    // Only "LOOKOUT:/NAV:/HELM:" lines are ever spoken. Anything else is the model thinking out loud (11-11: Nav read out
+    // its reasoning about "Meet you"), so it stays in the trace and the OOW hears "Say again, sir" instead.
+    if (!tagged && txt.trim() && !/^NONE\.?$/i.test(txt.trim())) { tr('claude_untagged', { text: txt.trim() }); items.push({ who: 'nav', text: 'Say again, sir' }); }
     for (let i = items.length - 1; i >= 0; i--) { const it = items[i]; Q.unshift({ who: it.who, call: false, body: () => it.text }); }
     pump();
   },
