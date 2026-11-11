@@ -934,15 +934,15 @@ function helmOrder(o, speakFn) {
   // The loop on a contact stays open through a turn (rudder, midship) and closes once the ship is
   // steady on the ordered course (helm: "Course ..."), or at once for a "steady" order.
   if (S.loop) { if (o.steady) closeLoop(); else if (o.crs != null) S.loop.awaitSteady = true; }
-  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', 'Wheel amidships'); return; }
+  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', "Midship. Wheel's amidship, sir"); return; }
   if (o.steady) { own.tgt = Math.round(own.hdg) % 360; own.rud = 10 * Math.sign(own.rot || 1); own.dir = Math.sign(sdiff(own.tgt, own.hdg)) || 1; say('helm', `Steady, ${trueWords(own.tgt)}`); return; }
   let dir = o.side ? (o.side === 'starboard' ? 1 : -1) : (o.crs != null ? (Math.sign(sdiff(o.crs, own.hdg)) || 1) : 1);
   const mag = o.rud != null ? o.rud : 10;
   own.rud = dir * mag; own.tgt = o.crs; own.dir = dir; own.steadyCalled = false;
   const sw = dir > 0 ? 'Starboard' : 'Port';
   const mw = digitsOrWords(mag), sl = sw.toLowerCase();
-  // Ernest's repeat-backs: "Starboard 10" -> "10 on starboard wheel on, sir". "Steer XXX" -> only "On course XXX", said once steady on it.
-  if (o.rud != null || o.side) say('helm', `${mw[0].toUpperCase() + mw.slice(1)} on ${sl} wheel on, sir`);
+  // Repeat-backs follow NJOC/BVP (11-11): "Starboard 15" -> "Starboard fifteen. Fifteen of starboard wheel on, sir". "Steer XXX" -> only "On course XXX", said once steady on it (his 11-11 pick).
+  if (o.rud != null || o.side) say('helm', `${sw} ${mw}. ${mw[0].toUpperCase() + mw.slice(1)} of ${sl} wheel on, sir`);
 }
 const digitsOrWords = n => ({ 5: 'five', 10: 'ten', 15: 'fifteen', 20: 'twenty', 25: 'twenty five', 30: 'thirty', 35: 'thirty five' })[n] || digits(n);
 function stepOwn(dt) { // dt seconds
@@ -989,7 +989,7 @@ function handleUtterance(text, fromVoice, fromSitrep) {
     else if (c.k === 'helm') helmOrder(c, (w, txt) => reply(w, () => txt));
     else if (c.k === 'speed') { engineLoop(); S.own.tgtSpd = c.v; const v = c.v; reply('helm', () => `Revolutions for ${v} knots`); }
     else if (c.k === 'step') { engineLoop(); S.own.tgtSpd = c.dir === 'ahead' ? STEP_KN * c.n : 0; const o = c; reply('helm', () => `Both engines step ${STEP_WORD[o.n]} ${o.dir}`); }
-    else if (c.k === 'telegraph') { engineLoop(); S.own.tgtSpd = TELEGRAPH[c.order]; const o = c.order; reply('helm', () => o === 'stop' ? 'Stop both. Both engines stopped' : `${o[0].toUpperCase() + o.slice(1)} both. Both engines ${o}`); }
+    else if (c.k === 'telegraph') { engineLoop(); S.own.tgtSpd = TELEGRAPH[c.order]; const o = c.order; reply('helm', () => o === 'stop' ? 'Stop both engines. Both engines stopped' : `${o[0].toUpperCase() + o.slice(1)} both. Both engines ${o}`); }
   }
   // replies go after any answers still waiting (so orders are repeated in the order given), ahead of call-ups
   if (replies.length) { let i = Q.findIndex(q => q.call || q.auto); if (i < 0) i = Q.length; Q.splice(i, 0, ...replies); pump(); }
@@ -1445,6 +1445,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=mid2"></script>
+<script src="voice.js?v=bvp1"></script>
 </body>
 </html>
