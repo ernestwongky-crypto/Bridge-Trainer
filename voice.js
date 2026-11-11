@@ -6,8 +6,8 @@
 const K = { ear: 'bt.ear', mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', model: 'bt.claudeModel', vLook: 'bt.vLook', vNav: 'bt.vNav', vHelm: 'bt.vHelm' };
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
-const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en' };
-const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below'];
+const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en', co: 'aura-2-zeus-en' };
+const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midships', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'meet her', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below', 'PI line', 'on track', 'off track', 'wheelover', 'range to wheelover', 'CO sir', 'deviation', 'report CPA', 'harbour launch', 'pilot vessel'];
 const QUESTIONY = /\b(what|which|where|when|why|how|who|say again|repeat|confirm|any|anything|is|are|was|do|does|did|can|could|should|tell|give me|report|status|picture|closest|nearest|time to|ahead of|behind)\b/;
 
 const WORKLET = `class Cap extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=0;this.buf=new Int16Array(1600);this.n=0;this.on=true;this.port.onmessage=e=>{this.on=e.data}}
@@ -28,10 +28,14 @@ GROUND TRUTH
 STYLE
 - Lookout: relative bearing then description, e.g. "green four five, ferry crossing right to left, bearing drawing left slowly".
 - Nav follow-up: "follow up on last reported, true bearing ..., range ..., tracking ... at ... knots, CPA ... in ... minutes on our port/starboard side, bearing drawing ...". Use nav_followup.
+- "Nav, report CPA": CPA only, with side and time, e.g. "CPA three cables in five minutes on our port side". No bearing or range. Use cpa_only.
 - Asked for bow crossing range: nav uses bow_crossing.
+- On or off track: nav uses track_status ("OOW nav, by PI line, two cables port off track"). Range to wheelover: nav uses wheelover_range. NEVER give a course to regain track, or any course advice: the OOW works it out himself.
 - "check starboard/port, check <course>": LOOKOUT line from check_side, then NAV line from check_course.
-- Wording follows the RSN bridge voice procedure: lookout "Starboard, no near objects sighted, sir"; nav "Blind clear three zero zero up to three miles, fouled by land"; helm "Starboard fifteen. Fifteen of starboard wheel on, sir", "Steer three zero zero", "Midship. Wheel's amidship, sir".
-- Numbers digit by digit ("two five nine", "green four five", "two point five cables"). Never say "decimal" or "speed".
+- Wording: lookout "Starboard, not holding any nearby object"; nav "zero one zero clear on blind"; helm "Ten on starboard wheel on, sir", "On course zero one zero", "Wheel amidships".
+- Ranges under one mile in cables ("seven cables", never "point seven miles"); one mile and over in miles. Numbers digit by digit ("two five nine", "green four five", "two point five cables"). Never say "decimal", "speed" or "aye".
+- "Off script": the person who got it wrong states the correct rule once in a few words, then gives the report again correctly. No discussion.
+- The CO and the drill director are handled by the simulator. Never speak as the CO, never fast-forward, never end the scenario, never debrief.
 - If the OOW's words are unclear, the right person says "say again".
 - Answer ONLY what the OOW asked, as the one person who would answer it, in one line. Never volunteer other reports, opinions or advice, and never mention contact ids or other data labels.
 
@@ -41,6 +45,9 @@ const TOOLS = [
   { name: 'get_situation', description: 'Own ship state and every contact within 6 nm: id, relative and true bearing, range, type, aspect, course, speed, CPA, time to CPA, bearing movement, bow crossing.', input_schema: { type: 'object', properties: {} } },
   { name: 'nav_followup', description: 'Nav follow-up report text. Omit contact_id for the followed contact.', input_schema: { type: 'object', properties: { contact_id: { type: 'integer' } } } },
   { name: 'lookout_bearing', description: 'Lookout report of relative bearing and bearing movement. Omit contact_id for the followed contact.', input_schema: { type: 'object', properties: { contact_id: { type: 'integer' } } } },
+  { name: 'cpa_only', description: 'Nav: CPA, time and side only. Omit contact_id for the followed contact.', input_schema: { type: 'object', properties: { contact_id: { type: 'integer' } } } },
+  { name: 'track_status', description: 'Nav: on or off track by PI line.', input_schema: { type: 'object', properties: {} } },
+  { name: 'wheelover_range', description: 'Nav: range to the wheelover.', input_schema: { type: 'object', properties: {} } },
   { name: 'bow_crossing', description: 'Bow crossing range text. Omit contact_id for the followed contact.', input_schema: { type: 'object', properties: { contact_id: { type: 'integer' } } } },
   { name: 'check_side', description: 'Lookout: nearest object on one side.', input_schema: { type: 'object', properties: { side: { type: 'string', enum: ['port', 'starboard'] } }, required: ['side'] } },
   { name: 'check_course', description: 'Nav: is a new course clear on blind.', input_schema: { type: 'object', properties: { course: { type: 'integer' } }, required: ['course'] } },
@@ -142,6 +149,7 @@ const VOICE = window.VOICE = {
   route(text) {
     // while a call-up waits for "OOW", a short line that isn't an order is your "OOW" misheard ("What would I do?")
     if (typeof phase !== 'undefined' && phase === 'await' && cur && cur.call && text.trim().split(/\s+/).length <= 5 && !parseCommand(text).some(c => c.k !== 'ack')) { tr('heard_as_ack', { text }); handleUtterance('OOW', true); return; }
+    if (isCoRequest(text)) { handleUtterance(text, true); return; } // the CO answers a deviation request
     if (sitrepFilter(text)) return; // sitrep words are logged, never answered
     const cmds = parseCommand(text);
     const bare = text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -204,6 +212,9 @@ const VOICE = window.VOICE = {
       case 'get_situation': return situation();
       case 'nav_followup': if (a.contact_id != null && !this.pick(a.contact_id)) return { error: 'no such contact' }; return navReport();
       case 'lookout_bearing': return lookoutBearing(this.pick(a.contact_id));
+      case 'cpa_only': if (a.contact_id != null && !this.pick(a.contact_id)) return { error: 'no such contact' }; return cpaReport();
+      case 'track_status': return trackReport();
+      case 'wheelover_range': return woReport();
       case 'bow_crossing': if (a.contact_id != null && !this.pick(a.contact_id)) return { error: 'no such contact' }; return bcrReport();
       case 'check_side': return checkSide(a.side === 'port' ? 'port' : 'starboard');
       case 'check_course': return checkCourse(((Math.round(+a.course) % 360) + 360) % 360);
@@ -211,7 +222,7 @@ const VOICE = window.VOICE = {
       case 'helm_order': {
         const o = a.midships ? { mid: true, rud: 0 } : a.steady ? { steady: true } : { side: a.side || null, rud: a.rudder != null ? Math.min(35, Math.max(0, +a.rudder)) : null, crs: a.course != null ? ((Math.round(+a.course) % 360) + 360) % 360 : null };
         if (!o.mid && !o.steady && o.side == null && o.crs == null) return { error: 'need a side or a course' };
-        helmOrder(o); return 'done, helmsman repeated the order';
+        helmOrder(o); return 'done, the helmsman answers by himself';
       }
       case 'set_speed': { const v = Math.max(0, Math.min(30, +a.knots)); closeLoop(); S.own.tgtSpd = v; say('helm', `Revolutions for ${v} knots`); return 'done, helmsman repeated the order'; }
       case 'set_cpa_trigger': { const v = +a.cables; S.trigger = v > 0 ? v / 10 : null; S.contacts.forEach(x => x.trigAlerted = false); return v > 0 ? `CPA trigger set, ${cableWords(v / 10)}` : 'CPA trigger cancelled'; }
@@ -220,7 +231,7 @@ const VOICE = window.VOICE = {
   },
 
   /* ---------- voices ---------- */
-  voiceFor(who) { return store.get(who === 'lookout' ? K.vLook : who === 'helm' ? K.vHelm : K.vNav) || DEF_VOICE[who] || DEF_VOICE.nav; },
+  voiceFor(who) { if (who === 'co') return DEF_VOICE.co; return store.get(who === 'lookout' ? K.vLook : who === 'helm' ? K.vHelm : K.vNav) || DEF_VOICE[who] || DEF_VOICE.nav; },
   openTTS(who) {
     const q = new URLSearchParams({ model: this.voiceFor(who), encoding: 'linear16', sample_rate: '24000', speed: '1.2' });
     const ws = new WebSocket('wss://api.deepgram.com/v1/speak?' + q.toString(), ['token', store.get(K.dg)]);
@@ -326,7 +337,7 @@ function situation() {
     };
   });
   return {
-    own_ship: { heading: Math.round(o.hdg) % 360, speed_kn: r1(o.spd), ordered_course: o.tgt, rudder: o.rud, leg: S.cues.wo ? 'westbound ITZ, planned course 259' : 'southbound 180 to wheel over onto 259' },
+    own_ship: { heading: Math.round(o.hdg) % 360, speed_kn: r1(o.spd), ordered_course: o.tgt, rudder: o.rud, leg: `${S.leg.name}, planned course ${S.leg.course}, next course ${S.leg.next}`, off_track_cables: r1(legXte(S.leg, o.x, o.y) * 10) + ' (positive = port of track)', range_to_wheelover_nm: r1(Math.max(0, woRemain())) },
     drill_time: fmtT(S.t), cpa_trigger_cables: S.trigger != null ? r1(S.trigger * 10) : null, margins: { cpa_cables: 2.5, bow_crossing_cables: 8 }, contacts
   };
 }

@@ -165,13 +165,18 @@ td.bad { color: var(--port); }
     <div class="brief">
       <h1><small>Bridge drill · Singapore Strait</small>Changi Bridge Trainer</h1>
       <dl class="legs">
-        <dt>Start</dt><dd>South of the CNB knuckle, 180 at 12 kn</dd>
-        <dt>Leg 1</dt><dd>Through the Tanah Merah ferry corridor</dd>
-        <dt>WO</dt><dd>Come right to the westbound ITZ, 259</dd>
-        <dt>Leg 2</dt><dd>3.8 nm west, anchorages to starboard, TSS to port</dd>
+        <dt>A → B</dt><dd>South of CNB-3 By, 180, 1.4 nm, 7 min. Harbour launches and bunkers, no ferries</dd>
+        <dt>B → C</dt><dd>Westbound ITZ, 249, 7.5 nm, 38 min. Ferries, bunkers, tankers, pilots, tugs, warships</dd>
+        <dt>Run</dt><dd>One leg, 12 kn, on track. One contact at a time; the drill skips ahead between contacts and ends at the wheel-over</dd>
       </dl>
-      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm: "Course …"), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then declare it clear and give the order, e.g. "starboard clear, two five nine clear, starboard fifteen, slow ahead both". Engine orders: "step eight ahead both engines" (step 10 = 12 kn, step 1 slowest), "stop both engines". "Very good" is an acknowledgement.</p>
+      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm: "On course …"), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then declare it clear and give the order, e.g. "starboard clear, two five nine clear, starboard fifteen, slow ahead both". Engine orders: "step eight ahead both engines" (step 10 = 12 kn, step 1 slowest), "stop both engines". "Very good" is an acknowledgement. Nav answers "nav, report CPA", "nav, on track?" (by PI line) and "nav, range to wheelover"; nav never gives the course to regain track. Bow crossing under 8 cables: "CO sir, request to pass five cables ahead of her".</p>
       <div class="opts">
+        <div><div class="lbl">Leg</div>
+          <div class="seg" role="radiogroup" aria-label="Leg">
+            <input type="radio" name="leg" id="lAB" value="AB"><label for="lAB">A → B</label>
+            <input type="radio" name="leg" id="lBC" value="BC"><label for="lBC">B → C</label>
+            <input type="radio" name="leg" id="lRand" value="rand" checked><label for="lRand">Either</label>
+          </div></div>
         <div><div class="lbl">Light</div>
           <div class="seg" role="radiogroup" aria-label="Light">
             <input type="radio" name="tod" id="tDay" value="day" checked><label for="tDay">Day</label>
@@ -197,7 +202,7 @@ td.bad { color: var(--port); }
       </div>
       <button id="bStart">Start drill</button>
       <p class="note"><b>Voice orders:</b> with Voice call on, just talk. Without it, press Talk (or the space bar on a laptop); Hands-free keeps the mic open and pauses it while the team speaks.</p>
-      <p class="note">Traffic is different every run. Geography is approximate, traced from a public MPA chart, and not for navigation.</p>
+      <p class="note">Contacts are different every run: crossing from either side, head-on or overtaking, some passing clear and some a real risk. Geography is approximate, traced from a public MPA chart, and not for navigation.</p>
     </div>
   </section>
 
@@ -314,13 +319,27 @@ const ANCH = [ // [name, x0, x1, y0, y1] nm
   ['Eastern Special Purposes A', 6.48, 8.71, 1.68, 3.03],
   ['Eastern Bunkering A', 12.76, 15.65, 2.35, 3.43]
 ];
-const LANE_W = x => 0.15 + (x - 8.53) * 0.198;   // westbound lane centreline
+// Westbound lane centreline: as traced east of B; west of B it runs parallel to the 249 leg (track brief)
+const LANE_W = x => 0.78 + (x - 11.73) * (x >= 11.73 ? 0.198 : 0.384);
 const LANE_E = x => LANE_W(x) - 1.3;             // eastbound lane centreline
 const PORT_LIMIT = x => LANE_W(x) + 0.87;
 const TMFT = [9.3, 3.7];
-const START = [11.73, 3.0], WP = [11.73, 1.45], LEG2 = 259;
-const END = [WP[0] + 3.8 * Math.sin(LEG2 * D2R), WP[1] + 3.8 * Math.cos(LEG2 * D2R)];
-const TRACK = [START, WP, END];
+
+/* ---- Track, from the course track briefs ----
+   A (South of CNB-3 By) -> B: 180, 1.4 nm. B -> C: 249, 7.5 nm, next course 244. One leg per scenario. */
+const PT_A = [11.73, 3.0], PT_B = [11.73, 1.6];
+const PT_C = [PT_B[0] + 7.5 * Math.sin(249 * D2R), PT_B[1] + 7.5 * Math.cos(249 * D2R)];
+const TRACK = [PT_A, PT_B, PT_C];
+const LEGS = {
+  AB: { id: 'AB', name: 'A to B', spoken: 'Alpha to Bravo', from: PT_A, to: PT_B, course: 180, len: 1.4, next: 249 },
+  BC: { id: 'BC', name: 'B to C', spoken: 'Bravo to Charlie', from: PT_B, to: PT_C, course: 249, len: 7.5, next: 244 }
+};
+const TURN_R = 0.25; // nm, assumed turning radius at 12 kn
+// wheel-over distance before the waypoint for the turn onto the next course
+const woDist = L => Math.max(0.03, TURN_R * Math.tan(Math.abs(sdiff(L.next, L.course)) / 2 * D2R));
+const legAlong = (L, x, y) => (x - L.from[0]) * Math.sin(L.course * D2R) + (y - L.from[1]) * Math.cos(L.course * D2R);
+// signed cross-track distance: positive = to port of the track
+const legXte = (L, x, y) => -((x - L.from[0]) * Math.cos(L.course * D2R) - (y - L.from[1]) * Math.sin(L.course * D2R));
 
 /* ---- Vessel types ---- */
 const TYPES = {
@@ -331,101 +350,87 @@ const TYPES = {
   carcarrier: { L: 200, B: 32, H: 44, name: 'car carrier' },
   bunker: { L: 90, B: 16, H: 16, name: 'bunker tanker' },
   tug: { L: 30, B: 10, H: 11, name: 'tug', small: true },
+  tow: { L: 70, B: 20, H: 9, name: 'tug and tow' },
+  launch: { L: 16, B: 4, H: 5, name: 'harbour launch', small: true },
+  pilot: { L: 18, B: 5, H: 6, name: 'pilot vessel', small: true },
+  warship: { L: 115, B: 15, H: 26, name: 'warship' },
   craft: { L: 14, B: 4, H: 4, name: 'small craft', small: true }
 };
 
 /* ---- Seeded random ---- */
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 1e6) / 1e6; }; }
 
-/* ---- Routes ---- */
-const R_MAIN_OUT = [[...TMFT, 8], [9.96, 3.38, 13], [11.73, 2.44, 14], [13.25, 1.45, 14], [14.05, 0.2, 28], [14.67, -1.42, 28], [14.9, -2.8, 28], [15.2, -6, 28]];
-const R_BINTAN_OUT = [[...TMFT, 8], [9.96, 3.38, 13], [11.73, 2.44, 14], [13.25, 1.45, 14], [15.5, 1.15, 28], [20, 0.6, 28]];
-const R_WEST_OUT = [[...TMFT, 8], [8.71, 2.62, 13], [8.83, 1.5, 14], [8.95, 0.6, 26], [9.3, -1.5, 26], [9.8, -6, 26]];
-const rev = (r, slowFrom) => { // inbound: fast until corridor, then slow
-  const o = r.slice().reverse().map(p => [p[0], p[1], 0]);
-  for (let i = 0; i < o.length; i++) o[i][2] = i < slowFrom ? 27 : (i === o.length - 1 ? 6 : 12);
-  return o;
-};
-const R_MAIN_IN = rev(R_MAIN_OUT, R_MAIN_OUT.length - 4);
-const R_WEST_IN = rev(R_WEST_OUT, R_WEST_OUT.length - 3);
-
-function routeLen(r) { let L = 0; for (let i = 1; i < r.length; i++) L += hyp(r[i][0] - r[i - 1][0], r[i][1] - r[i - 1][1]); return L; }
-// place a vessel a given distance along route
-function placeOnRoute(route, dist) {
-  let d = dist;
-  for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1], b = route[i], L = hyp(b[0] - a[0], b[1] - a[1]);
-    if (d <= L) { const f = d / L; return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, wp: i, course: brg(b[0] - a[0], b[1] - a[1]), speed: b[2] }; }
-    d -= L;
-  }
-  const z = route[route.length - 1]; return { x: z[0], y: z[1], wp: route.length - 1, course: 0, speed: 0 };
-}
-// distance along route from start to a point index
-function distTo(route, idx) { let L = 0; for (let i = 1; i <= idx; i++) L += hyp(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1]); return L; }
-
+/* ---- Contacts ---- */
 let NEXT_ID = 1;
-function mkRoute(type, route, dist) {
-  const p = placeOnRoute(route, Math.max(0, dist));
-  return { id: NEXT_ID++, type, x: p.x, y: p.y, course: p.course, speed: p.speed, route, wp: p.wp, moving: true, trail: [] };
-}
 function mkStraight(type, x, y, course, speed) { return { id: NEXT_ID++, type, x, y, course, speed, moving: true, trail: [] }; }
 function mkAnchored(type, x, y, course) { return { id: NEXT_ID++, type, x, y, course, speed: 0, moving: false, anchored: true, trail: [] }; }
 
-/* ---- Scenario: realistic traffic for the CNB → westbound ITZ box ---- */
+/* ---- Scenario: anchored vessels as scenery; moving traffic comes one encounter at a time ---- */
 function buildScenario(seed) {
   NEXT_ID = 1;
   const r = rng(seed), U = (a, b) => a + (b - a) * r(), pick = a => a[Math.floor(r() * a.length)];
   const C = [];
-  // anchored vessels
   const anchorCount = [5, 4, 3, 4];
   ANCH.forEach((a, i) => { for (let k = 0; k < anchorCount[i]; k++) C.push(mkAnchored(pick(['tanker', 'bulk', 'bunker', 'tanker', 'container']), U(a[1] + .2, a[2] - .2), U(a[3] + .15, a[4] - .15), U(0, 360))); });
-  // own ship reaches the ferry crossing (Y 2.44) at ~2.8 min
-  const xMain = distTo(R_MAIN_OUT, 2);
-  const variant = r();
-  if (variant < 0.6) { // outbound ferry from starboard, give-way situation
-    const tCross = U(1.6, 4.2); C.push(mkRoute('ferry', pick([R_MAIN_OUT, R_BINTAN_OUT]), xMain - 14 * tCross / 60));
-    const t2 = U(5, 8); C.push(mkRoute('ferry', R_MAIN_IN, distTo(R_MAIN_IN, R_MAIN_IN.length - 3) - 12 * t2 / 60));
-  } else { // inbound ferry from port, then an outbound behind it
-    const t1 = U(2.0, 4.5); C.push(mkRoute('ferry', R_MAIN_IN, distTo(R_MAIN_IN, R_MAIN_IN.length - 3) - 12 * t1 / 60));
-    const t2 = U(5, 7.5); C.push(mkRoute('ferry', R_MAIN_OUT, xMain - 14 * t2 / 60));
+  return { contacts: C, rand: r };
+}
+
+/* ---- Encounters: one contact at a time, a planned mix ----
+   Kinds: crossing from starboard, crossing from port, head-on, overtaken (she overtakes us).
+   Each is a real risk (CPA 0 to 1.5 cables) or passing clear (CPA 4 to 9 cables).
+   Vessel types and speeds follow the leg's traffic (track briefs and Ernest's speeds). */
+const LEG_TRAFFIC = {
+  AB: { // harbour launches and bunkers moving between Eastern Bunkering A and B; no ferries on this leg
+    kinds: ['stbd', 'port', 'headon'],
+    types: { stbd: ['launch', 'bunker'], port: ['launch', 'bunker'], headon: ['launch'] }
+  },
+  BC: {
+    kinds: ['stbd', 'port', 'headon', 'overtaken'],
+    types: {
+      stbd: ['ferry', 'ferry', 'bunker', 'tanker', 'container', 'bulk', 'pilot', 'tow'],
+      port: ['ferry', 'ferry', 'bunker', 'tanker', 'container', 'bulk', 'pilot', 'tow'],
+      headon: ['warship', 'bunker', 'tow', 'tanker', 'pilot'],
+      overtaken: ['warship', 'ferry', 'pilot']
+    }
   }
-  // west corridor ferries meet the westbound leg around minute 18-24
-  C.push(mkRoute('ferry', R_WEST_OUT, distTo(R_WEST_OUT, 2) - 14 * U(16, 22) / 60 + 0.0));
-  if (r() < 0.7) C.push(mkRoute('ferry', R_WEST_IN, distTo(R_WEST_IN, R_WEST_IN.length - 3) - 12 * U(19, 25) / 60 - 27 * 0));
-  // bunker tanker leaving Eastern Bunkering B, crossing the ITZ southbound
-  { const tStart = U(6.5, 10.5); C.push({ ...mkRoute('bunker', [[10.4, 1.85, 7], [10.8, 0.3, 7], [16, LANE_E(16), 10]], 0), delay: tStart }); }
-  // tug in the ITZ eastbound, fine on the bow on the westbound leg
-  { const sp = U(7, 9), y0 = LANE_W(7) + 0.62 - U(0.05, 0.2); C.push(mkStraight('tug', 9.72 - sp * U(16, 20) / 60 * 0.98, y0, 79, sp)); }
-  // occasional small craft crossing
-  C.push({ ...mkStraight('craft', U(10.2, 11.0), U(0.6, 0.9), U(20, 40), U(14, 20)), delay: U(9, 14) });
-  // TSS traffic: preload + spawn schedule
-  const tss = ['container', 'tanker', 'bulk', 'carcarrier', 'container'];
-  for (let x = 6; x < 18; x += U(2.0, 3.4)) C.push(mkStraight(pick(tss), x, LANE_W(x) + U(-.2, .2), 259, U(11, 16)));
-  for (let x = 5; x < 17; x += U(2.0, 3.4)) C.push(mkStraight(pick(tss), x, LANE_E(x) + U(-.2, .2), 79, U(11, 16)));
-  const spawns = [];
-  for (let t = U(2, 6); t < 40; t += U(4, 8)) spawns.push({ t, kind: 'W', type: pick(tss), sp: U(11, 16) });
-  for (let t = U(2, 6); t < 40; t += U(4, 8)) spawns.push({ t, kind: 'E', type: pick(tss), sp: U(11, 16) });
-  for (let t = U(10, 14); t < 40; t += U(8, 13)) spawns.push({ t, kind: 'F', route: pick([R_MAIN_OUT, R_BINTAN_OUT, R_WEST_OUT]) });
-  for (let t = U(9, 13); t < 40; t += U(8, 13)) spawns.push({ t, kind: 'FI', route: pick([R_MAIN_IN, R_WEST_IN]) });
-  C.forEach(c => { if (c.delay) { c.waiting = true; } });
-  return { contacts: C, spawns, rand: r };
+};
+function typeSpeed(type, legId, U, along, overtaking) {
+  switch (type) {
+    case 'launch': return U(15, 20);
+    case 'bunker': return legId === 'AB' ? U(6, 10) : U(8, 12);
+    case 'ferry': return along < 2 && !overtaking ? U(10, 15) : U(25, 28); // slow near the corridor, fast once clear
+    case 'pilot': return overtaking ? U(16, 20) : U(15, 20);
+    case 'tow': case 'tug': return U(5, 8);
+    case 'warship': return overtaking ? U(16, 18) : U(12, 18);
+    default: return U(8, 14); // tankers, container ships, bulk carriers joining or leaving the TSS or anchorages
+  }
+}
+// Place one contact so that, holding course and speed, she meets own ship as planned.
+function makeEncounter(own, leg, kind, risk, rand, vis, maxT) {
+  const U = (a, b) => a + (b - a) * rand(), pick = a => a[Math.floor(rand() * a.length)];
+  for (let tries = 0; tries < 60; tries++) {
+    const type = pick(LEG_TRAFFIC[leg.id].types[kind]);
+    const sp = typeSpeed(type, leg.id, U, legAlong(leg, own.x, own.y), kind === 'overtaken');
+    const theta = kind === 'stbd' ? U(235, 300) : kind === 'port' ? U(60, 125) : kind === 'headon' ? U(172, 188) : U(-10, 10);
+    const crs = n360(own.hdg + theta);
+    const vo = vel(own.hdg, own.spd), vc = vel(crs, sp), vr = [vc[0] - vo[0], vc[1] - vo[1]], vrm = hyp(vr[0], vr[1]);
+    if (vrm < 0.04) continue;
+    const cpa = risk ? U(0, 0.15) : U(0.4, 0.9);
+    const s = rand() < 0.5 ? 1 : -1, nrm = [vr[1] / vrm * s, -vr[0] / vrm * s];
+    const R0 = U(vis * 0.75, vis * 0.95); // reported soon after she appears
+    const T = Math.min(Math.sqrt(Math.max(R0 * R0 - cpa * cpa, 0.01)) / vrm, maxT, 14); // minutes to CPA
+    if (T < 2.5) continue;
+    const pc = [own.x + vo[0] * T + nrm[0] * cpa, own.y + vo[1] * T + nrm[1] * cpa];
+    const st = [pc[0] - vc[0] * T, pc[1] - vc[1] * T];
+    if (rayLand(st[0], st[1], vc[0] * (T + 3), vc[1] * (T + 3)) <= 1) continue; // her water must be clear of land
+    return Object.assign(mkStraight(type, st[0], st[1], crs, sp), { enc: { kind, risk } });
+  }
+  return null;
 }
 
 /* ---- Kinematics ---- */
 function stepContact(c, dtMin) {
   if (!c.moving || c.waiting) return;
-  if (c.route) {
-    const tgt = c.route[c.wp];
-    if (!tgt) { c.gone = true; return; }
-    const dx = tgt[0] - c.x, dy = tgt[1] - c.y, d = hyp(dx, dy);
-    if (d < 0.03) { c.wp++; if (c.wp >= c.route.length) { c.gone = true; } return; }
-    const want = brg(dx, dy), rate = c.type === 'ferry' ? 180 : 40; // deg/min
-    const diff = sdiff(want, c.course);
-    c.course = n360(c.course + Math.max(-rate * dtMin, Math.min(rate * dtMin, diff)));
-    const acc = c.type === 'ferry' ? 25 : 4; // kn per min
-    const ts = tgt[2];
-    c.speed += Math.max(-acc * dtMin, Math.min(acc * dtMin, ts - c.speed));
-  }
   const v = vel(c.course, c.speed); c.x += v[0] * dtMin; c.y += v[1] * dtMin;
   if (c.x < -2 || c.x > 22 || c.y < -8 || c.y > 8) c.gone = true;
 }
@@ -491,6 +496,7 @@ function aspectWords(own, c, night) {
   const rb = relInfo(own, c).rb;
   if (Math.abs(perp) >= 0.45 * sp) return perp < 0 ? 'crossing right to left' : 'crossing left to right';
   if (along < 0) return (rb < 20 || rb > 340) ? 'head on' : 'on opposite course';
+  if (c.speed > own.spd + 1 && rb > 90 && rb < 270) return 'same direction, overtaking us';
   return (c.speed < own.spd && (rb < 60 || rb > 300)) ? 'same direction, we are overtaking' : 'same direction';
 }
 function lightsWords(own, c) { // what the lookout sees at night
@@ -520,6 +526,9 @@ function normalise(raw) {
   t = t.replace(/\bstarboard\b|\bstbd\b|\bstarbird\b|\bstar board\b/g, 'starboard');
   t = t.replace(/\b(navy|naff|nab|nev|knav|navigator|neff)\b/g, 'nav');
   t = t.replace(/\b(pcr|pc are|bc are|b c r|bee see are|bcrs)\b/g, 'bcr');
+  t = t.replace(/\b(c o|see oh|sea oh|ceo|c oh|seo|see o|sio)\b/g, 'co');
+  t = t.replace(/\b(will over|wheel over|wheelova|well over|we'll over)\b/g, 'wheelover');
+  t = t.replace(/\b(p i|pie|pi|pai)( line)\b/g, 'pi$2');
   t = t.replace(/\bcheck (stun|stan|stem|stern)\b/g, 'check stern');
   const toks = t.trim().split(/\s+/).map(w => (w in NUMW ? String(NUMW[w]) : w));
   // merge "20 5" -> 25 (tens + unit)
@@ -536,20 +545,28 @@ function normalise(raw) {
   // decimals "2 point 5"
   return m2.join(' ').replace(/(\d+) point (\d+)/g, '$1.$2');
 }
+const CO_RE = /\bco\b.*\b(sir|request|permission|deviat\w*|cables?)\b|\bcaptain\b.*\b(sir|request|permission|deviat\w*)\b/;
+const TRACK_RE = /\b(on|off) track\b|\bpi line\b|\bcross track\b|\bhow far (?:off|from) (?:the )?track\b/;
+const WO_RE = /\bwheelover\b|\bw ?o\b/;
+function isCoRequest(raw) { return CO_RE.test(' ' + normalise(raw) + ' '); }
 function parseCommand(raw) {
   const t = ' ' + normalise(raw) + ' ', out = [];
+  if (CO_RE.test(t)) { const cb = t.match(/(\d+(?:\.\d+)?) cables?\b/); return [{ k: 'co', cables: cb ? +cb[1] : null }]; } // a deviation request to the CO, answered by the CO only
   if (/\boow\b/.test(t)) out.push({ k: 'ack' });
   if (/\b(pause|freeze)\b/.test(t)) out.push({ k: 'pause' });
   if (/\b(resume|unfreeze|continue)\b/.test(t)) out.push({ k: 'resume' });
   for (const side of t.matchAll(/check (port|starboard|stern)/g)) out.push({ k: 'checkSide', side: side[1] }); // "check port, check starboard" answers both
   const cc = t.match(/check (?:course )?(\d{3})\b/); if (cc) out.push({ k: 'checkCourse', crs: +cc[1] % 360 });
   if (/\b(lookout|look out)\b/.test(t) || /\bbearing (movement|drift|check)\b/.test(t)) { const fu = t.match(/\b(green|red) (\d{1,3})\b/); out.push({ k: 'look', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null }); }
-  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t) || /\bcpa\b.*\b(?:below|under|less than|lower than|inside|within|drops? to|falls? to)\b/.test(t)) {
+  if (/\bnav\b/.test(t) || /bow crossing|\bbcr\b/.test(t) || TRACK_RE.test(t) || /range to wheelover/.test(t) || /\bcpa\b.*\b(?:below|under|less than|lower than|inside|within|drops? to|falls? to)\b/.test(t)) {
     const trig = t.match(/(?:cpa )?trigger (?:at |of )?(\d+(?:\.\d+)?)/) || t.match(/\bcpa\b.*\b(?:below|under|less than|lower than|inside|within|drops? to|falls? to)\s+(\d+(?:\.\d+)?)\b/);
     const fu = t.match(/\b(green|red) (\d{1,3})\b/);
     if (/\bcancel\b.*trigger|trigger (?:off|cancel)/.test(t)) out.push({ k: 'trigger', val: null });
     else if (trig) out.push({ k: 'trigger', val: +trig[1] });
     else if (/bow crossing|\bbcr\b/.test(t)) out.push({ k: 'bcr', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null });
+    else if (TRACK_RE.test(t) || /\btrack\b/.test(t)) out.push({ k: 'track' });
+    else if (WO_RE.test(t)) out.push({ k: 'wo' });
+    else if (/\bcpa\b/.test(t) && !/follow/.test(t)) out.push({ k: 'cpa', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null });
     else out.push({ k: 'nav', rel: fu ? (fu[1] === 'green' ? +fu[2] : 360 - +fu[2]) : null, followUp: /follow/.test(t) });
   }
   const rud = t.match(/\b(port|starboard) (\d{1,2})\b/);
@@ -572,7 +589,7 @@ function driftWords(drift, steadyWord) {
   return 'bearing drawing ' + (drift > 0 ? 'right' : 'left') + (a < 2 ? ' slowly' : '');
 }
 function driftShort(drift) { const a = Math.abs(drift); if (a < 0.4) return { sym: '\u25CF', txt: 'Constant', cls: 'd0' }; const r = drift > 0; return a < 2 ? { sym: r ? '\u25B8' : '\u25C2', txt: (r ? 'Right' : 'Left') + ' slowly', cls: 'd1' } : { sym: r ? '\u25B8\u25B8' : '\u25C2\u25C2', txt: r ? 'Right' : 'Left', cls: 'd2' }; }
-if (typeof module !== 'undefined') module.exports = { normalise, parseCommand, relInfo, bowCross, relWords, rangeWords, cableWords, buildScenario, stepContact, aspectWords, END, TRACK, LANE_W, trueWords, cpaOnCourse };
+if (typeof module !== 'undefined') module.exports = { normalise, parseCommand, relInfo, bowCross, relWords, rangeWords, cableWords, buildScenario, makeEncounter, LEGS, legAlong, legXte, woDist, stepContact, aspectWords, TRACK, LANE_W, isCoRequest, trueWords, cpaOnCourse };
 
 </script>
 <script>
@@ -580,7 +597,7 @@ if (typeof module !== 'undefined') module.exports = { normalise, parseCommand, r
 const $ = id => document.getElementById(id);
 const S = {
   own: null, contacts: [], spawns: [], t: 0, scale: 1, paused: true, running: false, tod: 'day',
-  voiceOut: true, lastReported: null, navTarget: null, trigger: null, cues: { oneMin: false, wo: false },
+  voiceOut: true, lastReported: null, navTarget: null, trigger: null, leg: LEGS.AB, plan: [], encDone: 0, active: null,
   look: 0, log: [], ownTrail: [], maxXte: 0, ended: false, seed: 0, plotRange: 2
 };
 const VIS = { day: 3.2, dusk: 3.0, night: 2.6 };
@@ -593,10 +610,10 @@ function pickVoices() {
   const pref = l => v.filter(x => x.lang.replace('_', '-').toLowerCase().startsWith(l));
   const pool = [...pref('en-gb'), ...pref('en-sg'), ...pref('en-au'), ...pref('en-us'), ...v];
   const uniq = [...new Set(pool)];
-  VOICES = { lookout: uniq[0], nav: uniq[1] || uniq[0], helm: uniq[2] || uniq[0] };
+  VOICES = { lookout: uniq[0], nav: uniq[1] || uniq[0], helm: uniq[2] || uniq[0], co: uniq[3] || uniq[1] || uniq[0] };
 }
 if ('speechSynthesis' in window) { pickVoices(); speechSynthesis.onvoiceschanged = pickVoices; }
-const ROLE = { lookout: 'Lookout', nav: 'Nav', helm: 'Helm', oow: 'OOW', sys: 'Drill' };
+const ROLE = { lookout: 'Lookout', nav: 'Nav', helm: 'Helm', co: 'CO', oow: 'OOW', sys: 'Drill' };
 /* ---------- trace: every step with a timestamp, read back after a run (window.BT_TRACE) ---------- */
 const TRACE = window.BT_TRACE = [];
 function tr(ev, d) { try { TRACE.push(Object.assign({ ms: Math.round(performance.now()), sim: fmtT(S.t), ev }, d || {})); if (TRACE.length > 4000) TRACE.shift(); } catch (e) { } }
@@ -611,7 +628,7 @@ function speak(who, text, cb) {
   try {
     const u = new SpeechSynthesisUtterance(text);
     if (VOICES[who]) u.voice = VOICES[who];
-    u.rate = who === 'helm' ? 1.4 : 1.35; u.pitch = who === 'nav' ? 0.85 : who === 'helm' ? 1.1 : 1.0;
+    u.rate = who === 'helm' ? 1.4 : 1.35; u.pitch = who === 'nav' ? 0.85 : who === 'helm' ? 1.1 : who === 'co' ? 0.75 : 1.0;
     u.onend = done; u.onerror = done;
     speechSynthesis.speak(u);
     setTimeout(done, 1200 + text.length * 80);
@@ -673,7 +690,7 @@ const norm = text => text.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ').replace(/\
 const ACK_LEAD = /^\s*(roger|rodger|copy|noted|aye|very good|understood|okay|ok)\b[\s,.!]*/i;
 const SITREP_MARK = /\b(intention|intend|assess|assessed|risk of collision)\b/;
 const isSitrepSentence = s => SITREP_RE.test(s) || WOD_RE.test(s) || SITREP_MARK.test(s);
-const ORDER_KINDS = new Set(['trigger', 'helm', 'speed', 'step', 'telegraph', 'checkSide', 'checkCourse', 'bcr']);
+const ORDER_KINDS = new Set(['trigger', 'helm', 'speed', 'step', 'telegraph', 'checkSide', 'checkCourse', 'bcr', 'track', 'wo', 'cpa']);
 function sitrepFilter(text) {
   const t = norm(text);
   if (/\bcarry on\b/.test(t) && S.loop) { addLog('oow', text.trim()); S.sitrepOpen = false; closeLoop(); return true; }
@@ -765,21 +782,7 @@ function navFollowsLookout(c) {
 function lookoutBearing(c) {
   if (!c || c.gone) return 'not holding the contact';
   const ri = relInfo(S.own, c); c.lastDriftCls = driftShort(ri.drift).cls;
-  return `${relWords(ri.rb)}, ${typeWords(c, night())}, ${driftWords(ri.drift, 'constant')}`;
-}
-function bearingWatch() { // lookout calls up when a closing contact's bearing goes constant
-  for (const c of S.contacts) {
-    if (!c.reported || !c.moving || c.gone || c.waiting) continue;
-    const ri = relInfo(S.own, c);
-    const closing = isFinite(ri.tcpa) && ri.tcpa > 0 && ri.tcpa < 12 && ri.range < 3;
-    const cls = driftShort(ri.drift).cls;
-    if (closing && cls === 'd0' && c.lastDriftCls !== 'd0' && !c.constCalled) {
-      c.constCalled = true; c.lastDriftCls = 'd0';
-      if (S.loop && S.loop.c === c) continue; // already the OOW's open contact
-      enqueue({ who: 'lookout', call: true, auto: true, body: () => { S.navTarget = c; return lookoutBearing(c); } });
-    }
-    if (cls !== 'd0') c.constCalled = false;
-  }
+  return `${relWords(ri.rb)}, ${describe(c)}, ${driftWords(ri.drift, 'constant')}`;
 }
 function findByRel(rel) {
   let b = null, bd = 20;
@@ -798,7 +801,7 @@ function navReport() {
     const m = Math.max(1, Math.round(ri.tcpa));
     s += ri.cpa < 0.05 ? `CPA zero in ${m} minute${m > 1 ? 's' : ''}, collision course` : `CPA ${ri.cpa >= 0.95 ? rangeWords(ri.cpa) : cableWords(ri.cpa)} in ${m} minute${m > 1 ? 's' : ''} on our ${ri.cpaSide} side`;
     const a = Math.abs(ri.drift);
-    s += a < 0.4 ? ', bearing steady' : `, bearing drawing ${ri.drift > 0 ? 'right' : 'left'}${a < 2 ? ' slowly' : ''}`;
+    s += a < 0.4 ? ', bearing constant' : `, bearing drawing ${ri.drift > 0 ? 'right' : 'left'}${a < 2 ? ' slowly' : ''}`;
   }
   return s;
 }
@@ -809,6 +812,33 @@ function bcrReport() {
   if (b.kind === 'none') return 'not crossing her track';
   if (b.kind === 'stern') return `we cross her stern, passing ${cableWords(b.dist)} astern of her`;
   return `bow crossing range ${cableWords(b.dist)}`;
+}
+// "Nav, report CPA": CPA only, with side and time.
+function cpaReport() {
+  const c = S.navTarget;
+  if (!c || c.gone) return 'no contact held';
+  const ri = relInfo(S.own, c);
+  if (!isFinite(ri.tcpa) || ri.tcpa < 0) return 'past CPA, opening';
+  const m = Math.max(1, Math.round(ri.tcpa));
+  return ri.cpa < 0.05 ? `CPA zero in ${m} minute${m > 1 ? 's' : ''}, collision course` : `CPA ${ri.cpa >= 0.95 ? rangeWords(ri.cpa) : cableWords(ri.cpa)} in ${m} minute${m > 1 ? 's' : ''} on our ${ri.cpaSide} side`;
+}
+// On/off track by the PI line (the dashed lines either side of the track on the briefs). Never a course to regain.
+function trackReport() {
+  const d = legXte(S.leg, S.own.x, S.own.y), a = Math.abs(d), cab = Math.round(a * 10);
+  if (cab < 1) return 'OOW nav, by PI line, on track';
+  const side = d > 0 ? 'port' : 'starboard';
+  return `OOW nav, by PI line, ${a >= 0.95 ? rangeWords(a) : digits(cab) + (cab === 1 ? ' cable' : ' cables')} ${side} off track`;
+}
+const woRemain = () => S.leg.len - woDist(S.leg) - legAlong(S.leg, S.own.x, S.own.y);
+function woReport() { const r = Math.max(0, woRemain()); return `OOW nav, range to wheelover ${r < 0.05 ? 'zero' : rangeWords(r)}`; }
+// CO: speaks only when the OOW asks to deviate (bow crossing under eight cables). Mixed answers.
+function coReply(cables) {
+  if (cables == null) return 'OOW, what range do you intend to pass at?';
+  if (cables >= 8) return 'OOW, that is within your margin. Carry on.';
+  const r = Math.random(), n = Math.round(cables * 2) / 2, say = v => (v % 1 ? digits(Math.floor(v)) + ' point five' : digits(v)) + (v === 1 ? ' cable' : ' cables');
+  if (r < 0.45) return `OOW, approved, ${say(n)}.`;
+  if (r < 0.75) { const m = Math.min(7, Math.ceil(n + 2)); if (m > n) return `OOW, approved, but not less than ${say(m)}.`; return `OOW, approved, ${say(n)}.`; }
+  return 'OOW, not approved. Keep eight cables, or pass astern of her.';
 }
 // Crossing / reciprocal / parallel, from her course against ours.
 function aspectClass(c) {
@@ -833,7 +863,7 @@ function checkSide(side) {
     if (inSector && ri.range < bd) { bd = ri.range; best = c; }
   }
   const Side = side[0].toUpperCase() + side.slice(1);
-  if (!best) return `${Side}, no near objects sighted, sir`;
+  if (!best) return `${Side}, not holding any nearby object`;
   const ri = relInfo(S.own, best);
   return `${Side}, nearest ${relWords(ri.rb)}, ${aspectClass(best)}`;
 }
@@ -844,7 +874,7 @@ function landAhead(crs, dist) {
 function checkCourse(crs) {
   const name = trueWords(crs);
   const landAt = (() => { const d = [Math.sin(crs * D2R) * 6, Math.cos(crs * D2R) * 6]; const f = rayLand(S.own.x, S.own.y, d[0], d[1]); return f <= 1 ? f * 6 : null; })();
-  if (landAt != null && landAt < 1.0) return `Blind fouled ${name}, land at ${rangeWords(landAt)}`;
+  if (landAt != null && landAt < 1.0) return `${name} fouled on blind, land at ${rangeWords(landAt)}`;
   let worst = null;
   for (const c of S.contacts) {
     if (c.gone || c.waiting) continue;
@@ -852,9 +882,9 @@ function checkCourse(crs) {
     const ri = cpaOnCourse(S.own, c, crs);
     if (ri.tcpa > 0 && ri.tcpa < 20 && ri.cpa < 0.25 && (!worst || ri.cpa < worst.ri.cpa)) worst = { c, ri };
   }
-  if (!worst) return landAt != null ? `Blind clear ${name} up to ${rangeWords(landAt)}, fouled by land` : `Blind clear ${name}`;
+  if (!worst) return landAt != null ? `${name} clear on blind up to ${rangeWords(landAt)}, fouled by land` : `${name} clear on blind`;
   const now = relInfo(S.own, worst.c);
-  return `Blind fouled ${name}, ${relWords(now.rb)} ${typeWords(worst.c, night())}, CPA ${cableWords(worst.ri.cpa)}`;
+  return `${name} fouled on blind, ${relWords(now.rb)} ${typeWords(worst.c, night())}, CPA ${cableWords(worst.ri.cpa)}`;
 }
 
 /* ---------- helm ---------- */
@@ -864,15 +894,15 @@ function helmOrder(o, speakFn) {
   // The loop on a contact stays open through a turn (rudder, midship) and closes once the ship is
   // steady on the ordered course (helm: "Course ..."), or at once for a "steady" order.
   if (S.loop) { if (o.steady) closeLoop(); else if (o.crs != null) S.loop.awaitSteady = true; }
-  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', "Midship. Wheel's amidship, sir"); return; }
+  if (o.mid) { own.rud = 0; own.tgt = null; say('helm', 'Wheel amidships'); return; }
   if (o.steady) { own.tgt = Math.round(own.hdg) % 360; own.rud = 10 * Math.sign(own.rot || 1); own.dir = Math.sign(sdiff(own.tgt, own.hdg)) || 1; say('helm', `Steady, ${trueWords(own.tgt)}`); return; }
   let dir = o.side ? (o.side === 'starboard' ? 1 : -1) : (o.crs != null ? (Math.sign(sdiff(o.crs, own.hdg)) || 1) : 1);
   const mag = o.rud != null ? o.rud : 10;
   own.rud = dir * mag; own.tgt = o.crs; own.dir = dir; own.steadyCalled = false;
   const sw = dir > 0 ? 'Starboard' : 'Port';
   const mw = digitsOrWords(mag), sl = sw.toLowerCase();
-  // BVP: "Starboard 15. 15 of starboard wheel on, Sir." / "Steer 300." (then "Course 300." once on it)
-  say('helm', o.crs == null ? `${sw} ${mw}. ${mw[0].toUpperCase() + mw.slice(1)} of ${sl} wheel on, sir` : o.side ? `${sw} ${mw}, steer ${trueWords(o.crs)}` : `Steer ${trueWords(o.crs)}`);
+  // Ernest's repeat-backs: "Starboard 10" -> "10 on starboard wheel on, sir". "Steer XXX" -> only "On course XXX", said once steady on it.
+  if (o.rud != null || o.side) say('helm', `${mw[0].toUpperCase() + mw.slice(1)} on ${sl} wheel on, sir`);
 }
 const digitsOrWords = n => ({ 5: 'five', 10: 'ten', 15: 'fifteen', 20: 'twenty', 25: 'twenty five', 30: 'thirty', 35: 'thirty five' })[n] || digits(n);
 function stepOwn(dt) { // dt seconds
@@ -883,7 +913,7 @@ function stepOwn(dt) { // dt seconds
     if (Math.abs(rem) > 15 && Math.sign(rem) !== o.dir) rem = o.dir > 0 ? n360(o.tgt - o.hdg) : -n360(o.hdg - o.tgt);
     const lim = k * Math.abs(o.rud || 10);
     desired = Math.max(-lim, Math.min(lim, rem * 0.35));
-    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; const t = o.tgt; o.tgt = null; say('helm', `Course ${trueWords(t)}`); if (S.loop && S.loop.awaitSteady) closeLoop(); }
+    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; const t = o.tgt; o.tgt = null; say('helm', `On course ${trueWords(t)}`); if (S.loop && S.loop.awaitSteady) closeLoop(); }
   } else desired = k * o.rud;
   o.rot += (desired - o.rot) * Math.min(1, dt / 3);
   o.hdg = n360(o.hdg + o.rot * dt);
@@ -896,6 +926,7 @@ function handleUtterance(text, fromVoice, fromSitrep) {
   if (window.VOICE && VOICE.active && !fromVoice) { VOICE.route(text); return; }
   if ((window.LIVE && LIVE.active) && !fromVoice) { LIVE.userText(text); return; }
   tr('handle', { text, fromVoice: !!fromVoice });
+  if (isCoRequest(text)) { const c = parseCommand(text)[0]; addLog('oow', text); Q.unshift({ who: 'co', call: false, body: () => coReply(c.cables) }); pump(); return; }
   if (!fromSitrep && sitrepFilter(text)) { tr('as_sitrep', { text }); return; }
   const cmds = parseCommand(text);
   if (!cmds.length) { tr('not_understood', { text }); addLog('oow', text + (fromVoice ? '  (not understood)' : '  (not understood)')); return; }
@@ -910,6 +941,9 @@ function handleUtterance(text, fromVoice, fromSitrep) {
     else if (c.k === 'checkCourse') reply('nav', () => checkCourse(c.crs));
     else if (c.k === 'nav') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('nav', navReport); }
     else if (c.k === 'look') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('lookout', () => lookoutBearing(S.navTarget)); }
+    else if (c.k === 'track') reply('nav', trackReport);
+    else if (c.k === 'wo') reply('nav', woReport);
+    else if (c.k === 'cpa') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('nav', cpaReport); }
     else if (c.k === 'bcr') { if (c.rel != null) { const t = findByRel(c.rel); if (t) S.navTarget = t; } reply('nav', bcrReport); }
     else if (c.k === 'trigger') { S.trigger = c.val == null ? null : c.val / 10; S.contacts.forEach(x => x.trigAlerted = false); const v = c.val; reply('nav', () => v == null ? 'CPA trigger cancelled' : `CPA trigger set, ${cableWords(v / 10)}`); }
     else if (c.k === 'helm') helmOrder(c, (w, txt) => reply(w, () => txt));
@@ -926,19 +960,13 @@ let acc1 = 0, acc2 = 0, accTrail = 0;
 function simStep(dtSec) {
   S.t += dtSec / 60;
   stepOwn(dtSec);
-  for (const sp of S.spawns) if (!sp.done && S.t >= sp.t) { sp.done = true; spawn(sp); }
   for (const c of S.contacts) { if (c.waiting && S.t >= c.delay) c.waiting = false; stepContact(c, dtSec / 60); }
   for (const c of S.contacts) if (c.gone && c !== S.navTarget) S.past.push(c);
   S.contacts = S.contacts.filter(c => !c.gone || c === S.navTarget);
   acc1 += dtSec; acc2 += dtSec; accTrail += dtSec;
-  if (acc1 >= 1) { acc1 = 0; lookoutScan(); bearingWatch(); metrics(); cues(); renderContacts(); }
+  if (acc1 >= 1) { acc1 = 0; lookoutScan(); metrics(); director(); renderContacts(); }
   if (acc2 >= 2) { acc2 = 0; triggerWatch(); }
   if (accTrail >= 6) { accTrail = 0; S.ownTrail.push([S.own.x, S.own.y]); S.contacts.forEach(c => { if (c.moving && !c.waiting && hyp(c.x - S.own.x, c.y - S.own.y) < 5) { c.trail.push([c.x, c.y]); if (c.trail.length > 400) c.trail.shift(); } }); }
-}
-function spawn(sp) {
-  if (sp.kind === 'W') S.contacts.push(mkStraight(sp.type, 18.5, LANE_W(18.5) + (S.rand() - .5) * .4, 259, sp.sp));
-  else if (sp.kind === 'E') S.contacts.push(mkStraight(sp.type, 3.5, LANE_E(3.5) + (S.rand() - .5) * .4, 79, sp.sp));
-  else S.contacts.push(mkRoute('ferry', sp.route, 0));
 }
 function triggerWatch() {
   if (S.trigger == null) return;
@@ -950,19 +978,74 @@ function triggerWatch() {
     } else if (ri.cpa > S.trigger + 0.1 || ri.tcpa < 0) c.trigAlerted = false;
   }
 }
-const N2 = [Math.cos(LEG2 * D2R), -Math.sin(LEG2 * D2R)]; // unit normal of leg 2, pointing to the north side
-function cues() {
-  const d = (S.own.x - WP[0]) * N2[0] + (S.own.y - WP[1]) * N2[1];
-  if (!S.cues.oneMin && d <= 0.17 + S.own.spd / 60 && d > 0.1) { S.cues.oneMin = true; enqueue({ who: 'nav', call: true, auto: true, body: () => `one minute to wheel over, next course ${trueWords(LEG2)}` }); }
-  if (!S.cues.wo && d <= 0.17) { S.cues.wo = true; S.cues.oneMin = true; enqueue({ who: 'nav', call: false, auto: true, body: () => 'Wheel over, wheel over' }, true); }
-  // end of leg
-  const along = (S.own.x - WP[0]) * Math.sin(LEG2 * D2R) + (S.own.y - WP[1]) * Math.cos(LEG2 * D2R);
-  if (S.cues.wo && along > 3.8 && !S.ended) endDrill();
+/* ---------- scenario director ----------
+   One leg per scenario, starting on track at 12 kn. One contact at a time. When a contact is past CPA
+   and opening, the ship is steady back on the leg's course and the team is quiet, the drill fast-forwards
+   ("Time now seven minutes later") to the next contact. Never past the wheel-over: the last jump stops
+   just short of it, and the scenario ends when own ship reaches the leg's wheel-over point. */
+const CALM_MS = 6000; // quiet after a contact before moving on, so the OOW can ask nav first
+const NUMW_OUT = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+const numWords = n => n <= 20 ? NUMW_OUT[n] : (['', '', 'twenty', 'thirty', 'forty'][Math.floor(n / 10)] + (n % 10 ? ' ' + NUMW_OUT[n % 10] : ''));
+const teamQuiet = () => !S.loop && !cur && !Q.length && phase === 'idle' && !talking && !S.sitrepOpen && !(window.VOICE && VOICE.thinking);
+const minsToWO = () => S.own.spd > 0.5 ? woRemain() / S.own.spd * 60 : Infinity;
+function planEncounters(leg, r) {
+  const n = leg.id === 'AB' ? 1 : 3;
+  const kinds = LEG_TRAFFIC[leg.id].kinds.slice().sort(() => r() - 0.5).slice(0, n);
+  let risks = kinds.map(() => r() < 0.6);
+  if (n > 1 && risks.every(Boolean)) risks[Math.floor(r() * n)] = false; // a mix of clear passes
+  if (n > 1 && !risks.some(Boolean)) risks[Math.floor(r() * n)] = true;  // and real risk
+  return kinds.map((k, i) => ({ kind: k, risk: risks[i] }));
 }
-function xte() {
-  const segD = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L; t = Math.max(0, Math.min(1, t)); return hyp(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
-  const p = [S.own.x, S.own.y]; return Math.min(segD(p, TRACK[0], TRACK[1]), segD(p, TRACK[1], TRACK[2]));
+function director() {
+  if (!S.running || S.ended || S.ending) return;
+  if (woRemain() <= 0) { endScenario(); return; }
+  const c = S.active;
+  if (c && !c.gone) {
+    const ri = relInfo(S.own, c);
+    if (!((!isFinite(ri.tcpa) || ri.tcpa < 0) && ri.range > 1.0)) { S.calmSince = null; return; }
+  }
+  if (S.finalRun) return;
+  const o = S.own;
+  const steady = o.rud === 0 && o.tgt == null && Math.abs(o.rot) < 0.05 && Math.abs(sdiff(o.hdg, S.leg.course)) <= 3 && o.spd > 4 && Math.abs(o.spd - o.tgtSpd) < 0.3;
+  if (!steady || !teamQuiet()) { S.calmSince = null; return; }
+  const now = performance.now();
+  if (S.calmSince == null) { S.calmSince = now; return; }
+  if (now - S.calmSince < (S.encDone ? CALM_MS : 1500)) return;
+  S.calmSince = null;
+  nextEvent();
 }
+function nextEvent() {
+  const left = minsToWO();
+  const margin = S.leg.len < 3 ? 1.5 : 4; // her CPA comes at least this many minutes before the wheel-over
+  if (S.encDone < S.plan.length && left > margin + 2.5) {
+    let jump = S.encDone ? 3 + Math.floor(S.rand() * 6) : 0; // 3 to 8 minutes between contacts
+    jump = Math.min(jump, Math.floor(left - margin - 8)); // leave room for the next contact
+    if (jump >= 2) fastForward(jump);
+    const p = S.plan[S.encDone];
+    const c = makeEncounter(S.own, S.leg, p.kind, p.risk, S.rand, VIS[S.tod], minsToWO() - margin);
+    S.encDone++;
+    if (c) { S.contacts.push(c); S.active = c; tr('encounter', { kind: p.kind, risk: p.risk, type: c.type, speed: Math.round(c.speed) }); return; }
+  }
+  // nothing more fits: run on to just short of the wheel-over
+  S.finalRun = true;
+  const jump = Math.floor(left - 1.5);
+  if (jump >= 2) fastForward(jump);
+}
+function fastForward(m) {
+  const o = S.own, v = vel(o.hdg, o.spd);
+  o.x += v[0] * m; o.y += v[1] * m; S.t += m;
+  for (const c of S.contacts) if (c.moving) c.gone = true; // passed contacts are well astern by now
+  S.active = null; S.navTarget = null; S.lastReported = null;
+  S.ownTrail.push([o.x, o.y]);
+  tr('fast_forward', { minutes: m });
+  enqueue({ who: 'sys', call: false, body: () => `Time now ${numWords(m)} minutes later.` }, true);
+}
+function endScenario() {
+  if (S.ending) return; S.ending = true;
+  setPaused(true); Q.length = 0; cur = null; phase = 'idle'; clearTimeout(ackTimer);
+  speak('sys', 'End of scenario.', () => setTimeout(endDrill, 400));
+}
+function xte() { return Math.abs(legXte(S.leg, S.own.x, S.own.y)); }
 function metrics() {
   S.maxXte = Math.max(S.maxXte, xte());
   for (const c of S.contacts) {
@@ -1203,16 +1286,23 @@ function startDrill() {
   S.tod = document.querySelector('input[name=tod]:checked').value;
   S.voiceOut = $('optVoice').checked;
   S.seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
-  const sc = buildScenario(S.seed); S.contacts = sc.contacts; S.spawns = sc.spawns; S.rand = sc.rand;
-  S.own = { x: START[0], y: START[1], hdg: 180, spd: 12, tgtSpd: 12, rud: 0, rot: 0, tgt: null, dir: 1 };
-  Object.assign(S, { t: 0, lastReported: null, navTarget: null, trigger: null, cues: { oneMin: false, wo: false }, look: 0, ownTrail: [], maxXte: 0, ended: false, past: [], loop: null, sitrepOpen: false, sitrepQuiet: 0, sitrepText: '', nextScanAt: 0 });
-  Q.length = 0; cur = null; phase = 'idle'; $('log').innerHTML = '';
+  const sc = buildScenario(S.seed); S.contacts = sc.contacts; S.rand = sc.rand;
+  const legPick = (document.querySelector('input[name=leg]:checked') || {}).value || 'rand';
+  S.leg = LEGS[legPick === 'rand' ? (S.rand() < 0.5 ? 'AB' : 'BC') : legPick];
+  S.plan = planEncounters(S.leg, S.rand);
+  // one leg per scenario: start of the leg, on track, 12 knots
+  S.own = { x: S.leg.from[0], y: S.leg.from[1], hdg: S.leg.course, spd: 12, tgtSpd: 12, rud: 0, rot: 0, tgt: null, dir: 1 };
+  Object.assign(S, { encDone: 0, active: null, finalRun: false, ending: false, calmSince: null });
+  Object.assign(S, { t: 0, lastReported: null, navTarget: null, trigger: null, look: 0, ownTrail: [], maxXte: 0, ended: false, past: [], loop: null, sitrepOpen: false, sitrepQuiet: 0, sitrepText: '', nextScanAt: 0 });
+  Q.length = 0; cur = null; phase = 'idle'; $('log').innerHTML = ''; S.log = [];
   $('start').hidden = true; $('debrief').hidden = true; $('app').hidden = false;
   S.running = true; setPaused(false); setScale(1);
   if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch (e) { } }
   if (window.LIVE && LIVE.wanted()) { LIVE.start(); return; }
   if (window.VOICE && VOICE.wanted()) VOICE.start();
-  enqueue({ who: 'sys', call: false, body: () => 'Drill start. Own ship course one eight zero, twelve knots.' }, true);
+  tr('drill_start', { leg: S.leg.id, plan: S.plan });
+  nextEvent(); // the first contact is placed at the start of the leg
+  enqueue({ who: 'sys', call: false, body: () => `Drill start. Leg ${S.leg.spoken}, own ship course ${trueWords(S.leg.course)}, twelve knots.` }, true);
 }
 function endDrill() {
   if (window.LIVE) LIVE.stop();
@@ -1227,7 +1317,7 @@ function endDrill() {
     tr.innerHTML = `<td>${relShort(c.firstRb ?? 0)}</td><td>${TYPES[c.type].name}</td><td class="num ${cab < 2.5 ? 'bad' : ''}">${cab.toFixed(1)}</td><td class="num ${bcr != null && bcr < 8 ? 'bad' : ''}">${bcr != null ? bcr.toFixed(1) : '—'}</td><td class="num">${fmtT(c.minRt)}</td>`;
     tb.appendChild(tr);
   }
-  $('dbSum').textContent = `${fmtT(S.t)} drill time · ${rows.length} contacts reported · furthest off track ${(S.maxXte * 10).toFixed(1)} cables`;
+  $('dbSum').textContent = `Leg ${S.leg.name} · ${fmtT(S.t)} drill time · ${rows.length} contacts reported · furthest off track ${(S.maxXte * 10).toFixed(1)} cables`;
   requestAnimationFrame(() => { const [pc, pw, ph] = fitCanvas($('dbPlot')); drawPlot(pc, pw, ph, true); });
   $('debrief').scrollIntoView({ behavior: 'smooth' });
 }
@@ -1313,6 +1403,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=run4"></script>
+<script src="voice.js?v=legs1"></script>
 </body>
 </html>
