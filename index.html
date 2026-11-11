@@ -169,7 +169,7 @@ td.bad { color: var(--port); }
         <dt>B → C</dt><dd>Westbound ITZ, 249, 7.5 nm, 38 min. Ferries, bunkers, tankers, pilots, tugs, warships</dd>
         <dt>Run</dt><dd>One leg, 12 kn, on track. One contact at a time; the drill skips ahead between contacts and ends at the wheel-over</dd>
       </dl>
-      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm: "On course …"), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then declare it clear and give the order, e.g. "starboard clear, two five nine clear, starboard fifteen, slow ahead both". Engine orders: "step eight ahead both engines" (step 10 = 12 kn, step 1 slowest), "stop both engines". "Very good" is an acknowledgement. Nav answers "nav, report CPA", "nav, on track?" (by PI line) and "nav, range to wheelover"; nav never gives the course to regain track. Bow crossing under 8 cables: "CO sir, request to pass five cables ahead of her".</p>
+      <p class="note">Your margins: CPA 2.5 cables, bow crossing 8 cables. One contact at a time: lookout calls up and waits for "OOW", nav follows straight on, then it is your call. Nothing else is reported until the ship is steady on your ordered course (helm repeats "Steer three zero zero. Course three zero zero" at once, and the next report waits until she is steady), you order a speed, or you give a sitrep ("Watch-on-deck, sitrep … Watch-on-deck") whose intention is to maintain course and speed. "Carry on" or tapping the status bar also moves on. Say "check port / starboard / stern" for the lookout, "check two five nine" for nav's blind check, "nav" for a follow-up, "lookout" for bearing movement, "nav bow crossing range", "check starboard, check zero one zero", then declare it clear and give the order, e.g. "starboard clear, two five nine clear, starboard fifteen, slow ahead both". Engine orders: "step eight ahead both engines" (step 10 = 12 kn, step 1 slowest), "stop both engines". "Very good" is an acknowledgement. Nav answers "nav, report CPA", "nav, on track?" (by PI line) and "nav, range to wheelover"; nav never gives the course to regain track. Bow crossing under 8 cables: "CO sir, request to pass five cables ahead of her".</p>
       <div class="opts">
         <div><div class="lbl">Leg</div>
           <div class="seg" role="radiogroup" aria-label="Leg">
@@ -941,8 +941,9 @@ function helmOrder(o, speakFn) {
   own.rud = dir * mag; own.tgt = o.crs; own.dir = dir; own.steadyCalled = false;
   const sw = dir > 0 ? 'Starboard' : 'Port';
   const mw = digitsOrWords(mag), sl = sw.toLowerCase();
-  // Repeat-backs follow NJOC/BVP (11-11): "Starboard 15" -> "Starboard fifteen. Fifteen of starboard wheel on, sir". "Steer XXX" -> only "On course XXX", said once steady on it (his 11-11 pick).
+  // Repeat-backs follow NJOC/BVP (11-11): "Starboard 15" -> "Starboard fifteen. Fifteen of starboard wheel on, sir"; "Steer 300" -> "Steer three zero zero. Course three zero zero", said at once (nothing more when steady).
   if (o.rud != null || o.side) say('helm', `${sw} ${mw}. ${mw[0].toUpperCase() + mw.slice(1)} of ${sl} wheel on, sir`);
+  if (o.crs != null) say('helm', `Steer ${trueWords(o.crs)}. Course ${trueWords(o.crs)}`);
 }
 const digitsOrWords = n => ({ 5: 'five', 10: 'ten', 15: 'fifteen', 20: 'twenty', 25: 'twenty five', 30: 'thirty', 35: 'thirty five' })[n] || digits(n);
 function stepOwn(dt) { // dt seconds
@@ -953,7 +954,7 @@ function stepOwn(dt) { // dt seconds
     if (Math.abs(rem) > 15 && Math.sign(rem) !== o.dir) rem = o.dir > 0 ? n360(o.tgt - o.hdg) : -n360(o.hdg - o.tgt);
     const lim = k * Math.abs(o.rud || 10);
     desired = Math.max(-lim, Math.min(lim, rem * 0.35));
-    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; const t = o.tgt; o.tgt = null; say('helm', `On course ${trueWords(t)}`); if (S.loop && S.loop.awaitSteady) closeLoop(); }
+    if (Math.abs(rem) < 0.4 && Math.abs(o.rot) < 0.2) { o.hdg = o.tgt; o.rot = 0; o.rud = 0; o.tgt = null; tr('steady_on_course', { hdg: o.hdg }); if (S.loop && S.loop.awaitSteady) closeLoop(); } // BVP: the helm says nothing more once steady
   } else desired = k * o.rud;
   o.rot += (desired - o.rot) * Math.min(1, dt / 3);
   o.hdg = n360(o.hdg + o.rot * dt);
@@ -1445,6 +1446,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=bvp1"></script>
+<script src="voice.js?v=bvp2"></script>
 </body>
 </html>
