@@ -7,7 +7,7 @@ const K = { ear: 'bt.ear', mic: 'bt.mic', dg: 'bt.dgKey', cl: 'bt.claudeKey', mo
 const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }, set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } } };
 const el = id => document.getElementById(id);
 const DEF_VOICE = { lookout: 'aura-2-orion-en', nav: 'aura-2-arcas-en', helm: 'aura-2-apollo-en', sys: 'aura-2-arcas-en', co: 'aura-2-zeus-en' };
-const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midship', 'midships', 'amidship', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check starboard', 'check port', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below', 'PI line', 'on track', 'off track', 'wheelover', 'range to wheelover', 'CO sir', 'deviation', 'report CPA', 'harbour launch', 'pilot vessel'];
+const KEYTERMS = ['OOW', 'nav', 'lookout', 'starboard', 'port', 'midship', 'midships', 'amidship', 'steady', 'steer', 'niner', 'green', 'red', 'cables', 'CPA', 'bow crossing range', 'check stern', 'clear on blind', 'revolutions', 'knots', 'follow up', 'say again', 'wheel over', 'CPA trigger', 'ferry', 'tanker', 'bearing drawing', 'sitrep', 'watch-on-deck', 'risk of collision', 'intention', 'step', 'ahead both engines', 'stern', 'BCR', 'very good', 'maintain course and speed', 'watch on deck sitrep', 'report if CPA drops below', 'PI line', 'on track', 'off track', 'wheelover', 'range to wheelover', 'CO sir', 'deviation', 'report CPA', 'harbour launch', 'pilot vessel'];
 const QUESTIONY = /\b(what|which|where|when|why|how|who|say again|repeat|confirm|any|anything|is|are|was|do|does|did|can|could|should|tell|give me|report|status|picture|closest|nearest|time to|ahead of|behind)\b/;
 
 const WORKLET = `class Cap extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=0;this.buf=new Int16Array(1600);this.n=0;this.on=true;this.port.onmessage=e=>{this.on=e.data}}
@@ -17,13 +17,13 @@ registerProcessor('cap',Cap);`;
 const SYSTEM = `You are the bridge team on a warship in the Singapore Strait during an officer of the watch (OOW) crossing drill. The user is the OOW. You speak as the LOOKOUT, the NAVIGATOR ("nav") or the HELMSMAN. Never break character, never explain, never debrief.
 
 OUTPUT FORMAT
-- Reply with one or more lines, each starting with the speaker: "LOOKOUT: ...", "NAV: ..." or "HELM: ...". Nothing else. If nothing needs saying, reply "NONE".
+- Every word you write is spoken on the bridge. Start your reply with the speaker tag at once: one or more lines, each "LOOKOUT: ...", "NAV: ..." or "HELM: ...". Never write reasoning, analysis, notes or explanations before or after. If nothing needs saying, reply "NONE".
 - Keep it short and clipped like real bridge comms. No filler, no pleasantries.
 
 GROUND TRUTH
 - A simulator runs the ship and all traffic. Each message includes the simulator's situation right now, with ready-made report sentences for the followed contact. Answer straight from it: every bearing, range, course, speed, CPA, time and bow crossing range you say MUST come from that situation or a tool result. Never estimate or invent a figure. When a ready-made sentence fits, speak it word for word.
-- Call a tool only to act (helm_order, set_speed, set_cpa_trigger, follow_contact), for check_course or check_side, or for a report on a contact other than the followed one. Speed matters: answer in one go whenever you can.
-- Steering and speed happen only through helm_order and set_speed. The helmsman's repeat is spoken automatically when you call them, so do NOT write a HELM line for it.
+- Call a tool only to act (helm_order, set_engines, set_cpa_trigger, follow_contact), for check_course or check_side, or for a report on a contact other than the followed one. Speed matters: answer in one go whenever you can.
+- Steering and engines happen only through helm_order and set_engines. Engine orders are FMSS steps (step 10 = 12 knots, step 1 slowest), never knots. The helmsman's repeat is spoken automatically when you call them, so do NOT write a HELM line for it.
 
 STYLE
 - Lookout: relative bearing then description, e.g. "green four five, ferry crossing right to left, bearing drawing left slowly".
@@ -36,7 +36,7 @@ STYLE
 - Ranges under one mile in cables ("seven cables", never "point seven miles"); one mile and over in miles. Numbers digit by digit ("two five nine", "green four five", "two point five cables"). Never say "decimal", "speed" or "aye".
 - "Off script": the person who got it wrong states the correct rule once in a few words, then gives the report again correctly. No discussion.
 - The CO and the drill director are handled by the simulator. Never speak as the CO, never fast-forward, never end the scenario, never debrief.
-- If the OOW's words are unclear, the right person says "say again".
+- If the OOW's words are unclear, the right person says exactly "Say again, sir" and nothing more: no hint, no reason, no advice on what order is needed.
 - Answer ONLY what the OOW asked, as the one person who would answer it, in one line. Never volunteer other reports, opinions or advice, and never mention contact ids or other data labels.
 
 You will get the recent bridge comms for context, then what the OOW just said. The OOW's words come from speech recognition and may contain small errors; interpret them as a naval officer would.`;
@@ -52,7 +52,7 @@ const TOOLS = [
   { name: 'check_side', description: 'Lookout: nearest object on one side.', input_schema: { type: 'object', properties: { side: { type: 'string', enum: ['port', 'starboard'] } }, required: ['side'] } },
   { name: 'check_course', description: 'Nav: is a new course clear on blind.', input_schema: { type: 'object', properties: { course: { type: 'integer' } }, required: ['course'] } },
   { name: 'helm_order', description: 'Execute a helm order (repeat is spoken automatically). starboard 10 steer 259 -> side starboard, rudder 10, course 259. Port 20 -> side port, rudder 20. Midships -> midships true. Steady -> steady true.', input_schema: { type: 'object', properties: { side: { type: 'string', enum: ['port', 'starboard'] }, rudder: { type: 'integer' }, course: { type: 'integer' }, midships: { type: 'boolean' }, steady: { type: 'boolean' } } } },
-  { name: 'set_speed', description: 'Ordered speed in knots (repeat is spoken automatically).', input_schema: { type: 'object', properties: { knots: { type: 'number' } }, required: ['knots'] } },
+  { name: 'set_engines', description: 'Engine order in FMSS steps for both engines (repeat is spoken automatically). "step eight ahead both" -> step 8. "five ahead both" -> step 5. Stop both engines -> step 0. Never knots.', input_schema: { type: 'object', properties: { step: { type: 'integer', minimum: 0, maximum: 10 } }, required: ['step'] } },
   { name: 'set_cpa_trigger', description: 'Set nav CPA trigger in cables (0 cancels). Returns text for NAV to say.', input_schema: { type: 'object', properties: { cables: { type: 'number' } }, required: ['cables'] } },
   { name: 'follow_contact', description: 'Make a contact the one nav and lookout follow up on.', input_schema: { type: 'object', properties: { contact_id: { type: 'integer' } }, required: ['contact_id'] } }
 ];
@@ -147,6 +147,16 @@ const VOICE = window.VOICE = {
     this.route(t);
   },
   route(text) {
+    // engine orders split by the mic (11-11: "Step." … "ahead both."): a lone "step" waits 4 s for the rest;
+    // a lone "ahead both" just after a step order is the tail of it (logged only)
+    const nb = normalise(text).trim(), now = performance.now();
+    if (/^(?:step|steps|stepped|stip|stap)$/.test(nb)) { this.held = { at: now, text: text.trim().replace(/[.,!?\s]+$/, '') }; tr('fragment_held', { text }); return; }
+    if (this.held && now - this.held.at < 4000) { text = this.held.text + ' ' + text.trim(); tr('fragment_joined', { text }); }
+    this.held = null;
+    if (/^(?:ahead|astern) both(?: engines?)?$/.test(normalise(text).trim())) {
+      if (S.lastStepAt && now - S.lastStepAt < 8000) { addLog('oow', text.trim()); tr('fragment_tail', { text }); return; }
+      addLog('oow', text.trim()); say('helm', 'Say again, sir'); return;
+    }
     // while a call-up waits for "OOW", a short line that isn't an order is your "OOW" misheard ("What would I do?")
     if (typeof phase !== 'undefined' && phase === 'await' && cur && cur.call && text.trim().split(/\s+/).length <= 5 && !parseCommand(text).some(c => c.k !== 'ack')) { tr('heard_as_ack', { text }); handleUtterance('OOW', true); return; }
     if (isCoRequest(text)) { handleUtterance(text, true); return; } // the CO answers a deviation request
@@ -173,7 +183,7 @@ const VOICE = window.VOICE = {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': store.get(K.cl), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({ model, max_tokens: 1024, thinking: model.startsWith('claude-sonnet-5-5') ? { type: 'between_tools' } : { type: 'disabled' }, output_config: { effort: 'low' }, system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }], tools: TOOLS, messages })
+          body: JSON.stringify({ model, max_tokens: 400, thinking: model.startsWith('claude-sonnet-5-5') ? { type: 'between_tools' } : { type: 'disabled' }, output_config: { effort: 'low' }, system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }], tools: TOOLS, messages })
         });
         const data = await res.json();
         tr('claude_res', { step, took_ms: Math.round(performance.now() - t0), stop: data.stop_reason, tools: (data.content || []).filter(b => b.type === 'tool_use').map(b => b.name), text: (data.content || []).filter(b => b.type === 'text').map(b => b.text).join(' | ') });
@@ -201,6 +211,7 @@ const VOICE = window.VOICE = {
     for (const raw of txt.split('\n')) {
       const m = raw.trim().match(/^(LOOKOUT|NAV|HELM)\s*:\s*(.+)$/i);
       if (m) tagged++;
+      if (m && /^say again\b/i.test(m[2].trim())) m[2] = 'Say again, sir';
       if (m && !/^none\.?$/i.test(m[2].trim())) items.push({ who: m[1].toLowerCase(), text: m[2].trim() });
     }
     // Only "LOOKOUT:/NAV:/HELM:" lines are ever spoken. Anything else is the model thinking out loud (11-11: Nav read out
@@ -227,7 +238,7 @@ const VOICE = window.VOICE = {
         if (!o.mid && !o.steady && o.side == null && o.crs == null) return { error: 'need a side or a course' };
         helmOrder(o); return 'done, the helmsman answers by himself';
       }
-      case 'set_speed': { const v = Math.max(0, Math.min(30, +a.knots)); closeLoop(); S.own.tgtSpd = v; say('helm', `Revolutions for ${v} knots`); return 'done, helmsman repeated the order'; }
+      case 'set_engines': { const n = Math.max(0, Math.min(10, Math.round(+a.step || 0))); engineLoop(); S.own.tgtSpd = STEP_KN * n; S.lastStepAt = performance.now(); say('helm', n ? `Both engines step ${STEP_WORD[n]} ahead` : 'Stop both engines. Both engines stopped'); return 'done, helmsman repeated the order'; }
       case 'set_cpa_trigger': { const v = +a.cables; S.trigger = v > 0 ? v / 10 : null; S.contacts.forEach(x => x.trigAlerted = false); return v > 0 ? `CPA trigger set, ${cableWords(v / 10)}` : 'CPA trigger cancelled'; }
     }
     return { error: 'unknown tool' };

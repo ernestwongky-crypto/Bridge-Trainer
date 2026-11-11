@@ -513,14 +513,14 @@ function typeWords(c, night) { const T = TYPES[c.type]; if (!night) return T.nam
 /* ---- Command parser ---- */
 const NUMW = { zero: 0, oh: 0, one: 1, won: 1, two: 2, three: 3, tree: 3, four: 4, five: 5, fife: 5, six: 6, seven: 7, eight: 8, nine: 9, niner: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50 };
 const ACK_ALONE = new Set(['oh', 'o', 'ooh', 'oo', 'who', 'ow', 'owe', 'ok', 'okay', 'oh oh', 'o o', 'oh w', 'o double u', 'oh double u', 'double u', 'owl', 'oh well', 'whoa', 'oi', 'oh oh w', 'old']);
-const NAV_ALONE = new Set(['now', 'nab', 'nap', 'nag', 'naff', 'nev', 'never', 'nerve', 'knife', 'gnaw', 'navy', 'neve', 'nat', 'nam', 'nan', 'mav', 'love', 'dav', 'nov', 'knave', 'nah']);
+const NAV_ALONE = new Set(['report', 'next report', 'report please', 'nav report', 'follow up', 'now', 'nab', 'nap', 'nag', 'naff', 'nev', 'never', 'nerve', 'knife', 'gnaw', 'navy', 'neve', 'nat', 'nam', 'nan', 'mav', 'love', 'dav', 'nov', 'knave', 'nah']);
 const LOOK_ALONE = new Set(['look out', 'lookout', 'look', 'lockout', 'look at']);
 function normalise(raw) {
   const bare = raw.toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
   if (ACK_ALONE.has(bare)) return 'oow';
   if (NAV_ALONE.has(bare)) return 'nav';
   if (LOOK_ALONE.has(bare)) return 'lookout';
-  let t = ' ' + raw.toLowerCase().replace(/[,.;!?]/g, ' ').replace(/-/g, ' ') + ' ';
+  let t = ' ' + raw.toLowerCase().replace(/[,.;!?]/g, ' ').replace(/-/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
   // ack variants before number conversion
   t = t.replace(/\b(o\s?o\s?w|o w|oh oh (?:w|double you)|o o double you|oww|ow|oow)\b/g, ' oow ');
   t = t.replace(/\bcheck star\b(?! ?board)/g, 'check stern'); // the mic hears "check stern" as "check star" (run 1)
@@ -531,6 +531,9 @@ function normalise(raw) {
   t = t.replace(/\b(will over|wheel over|wheelova|well over|we'll over)\b/g, 'wheelover');
   t = t.replace(/\b(p i|pie|pi|pai)( line)\b/g, 'pi$2');
   t = t.replace(/\bcheck (stun|stan|stem|stern)\b/g, 'check stern');
+  // engine orders as the mic hears them (11-11 run): "the head booth", "a head both" -> "ahead both"; "step it" -> "step eight"
+  t = t.replace(/\b(?:the |a |uh )?(?:ahead|a head|head) (?:both|booth|boat|boats|bot|bowl|bath)\b/g, 'ahead both');
+  t = t.replace(/\b(step|steps|stepped|stip|stap) (it|eat|ate|eighth|8th)\b/g, 'step eight');
   const toks = t.trim().split(/\s+/).map(w => (w in NUMW ? String(NUMW[w]) : w));
   // merge "20 5" -> 25 (tens + unit)
   const m1 = [];
@@ -581,8 +584,11 @@ function parseCommand(raw) {
   const tel = t.match(/\b(dead slow|slow|half|full) (ahead|astern)\b/) || t.match(/\b(stop) (?:both|engines|both engines)\b|\b(all stop)\b/);
   if (tel) out.push({ k: 'telegraph', order: tel[2] && tel[1] !== 'stop' ? tel[1] + ' ' + tel[2] : 'stop' });
   // Step orders (FMSS): "step 8 ahead both engines"; step 10 = 12 kn, step 1 slowest
-  const stp = t.match(/\b(?:step|steps|stepped|stip|stap) (\d{1,2}) (ahead|astern)\b/) || t.match(/\b(ahead|astern) (?:step|steps) (\d{1,2})\b/);
-  if (stp) { const n = +(/\d/.test(stp[1]) ? stp[1] : stp[2]), dir = /\d/.test(stp[1]) ? stp[2] : stp[1]; if (n >= 1 && n <= 10) out.push({ k: 'step', n, dir }); }
+  // "step eight" alone = ahead both; "five ahead both (engines)" = step five ahead (11-11: never knots)
+  const stp = t.match(/\b(?:step|steps|stepped|stip|stap) (\d{1,2})(?: (ahead|astern))?\b/) || t.match(/\b(ahead|astern) (?:step|steps) (\d{1,2})\b/)
+    || (!/knots/.test(t) && t.match(/\b(\d{1,2}) (ahead|astern) (?:both|engines?)\b/));
+  if (stp) { const n = +(/\d/.test(stp[1]) ? stp[1] : stp[2]), dir = (/\d/.test(stp[1]) ? stp[2] : stp[1]) || 'ahead'; if (n >= 1 && n <= 10) out.push({ k: 'step', n, dir }); }
+  else if (/\b(?:slow(?:ing)? down|reduce speed|reducing speed|ease (?:down|off))\b.*\b(?:more|further|again|another step)\b|\b(?:one )?step down\b/.test(t)) out.push({ k: 'stepDown' });
   return out;
 }
 
@@ -730,7 +736,7 @@ const norm = text => text.toLowerCase().replace(/[^a-z0-9 \-]/g, ' ').replace(/\
 const ACK_LEAD = /^\s*(roger|rodger|copy|noted|aye|very good|understood|okay|ok)\b[\s,.!]*/i;
 const SITREP_MARK = /\b(intention|intend|assess|assessed|risk of collision)\b/;
 const isSitrepSentence = s => SITREP_RE.test(s) || WOD_RE.test(s) || SITREP_MARK.test(s);
-const ORDER_KINDS = new Set(['trigger', 'helm', 'speed', 'step', 'telegraph', 'checkSide', 'checkCourse', 'bcr', 'track', 'wo', 'cpa']);
+const ORDER_KINDS = new Set(['trigger', 'helm', 'speed', 'step', 'stepDown', 'telegraph', 'checkSide', 'checkCourse', 'bcr', 'track', 'wo', 'cpa']);
 function sitrepFilter(text) {
   const t = norm(text);
   if (/\bcarry on\b/.test(t) && S.loop) { addLog('oow', text.trim()); S.sitrepOpen = false; closeLoop(); return true; }
@@ -740,7 +746,7 @@ function sitrepFilter(text) {
   const cmds = parseCommand(body).filter(c => c.k !== 'ack');
   const marked = sNorm.some(isSitrepSentence);
   if (!S.sitrepOpen && !marked) {
-    if (!cmds.length && /\b(port|starboard|stern|ahead|\d{3}) (is )?clear\b/.test(t)) { addLog('oow', text.trim()); return true; } // "starboard clear, 259 clear"
+    if (!cmds.length && (/\b(port|starboard|stern|ahead|\d{3}) (is )?clear\b/.test(t) || /^(all )?clear$/.test(t))) { addLog('oow', text.trim()); return true; } // "starboard clear, 259 clear"
     if ((!body || (led && body.split(/\s+/).length <= 2)) && !cmds.length) { addLog('oow', text.trim()); return true; } // "Roger", "Very good": acknowledgement only
     const inLoop = S.loop && S.loop.stage === 'oow';
     // other words during an open loop that are neither an order nor a question: logged only, so the team doesn't talk over you
@@ -989,7 +995,8 @@ function handleUtterance(text, fromVoice, fromSitrep) {
     else if (c.k === 'trigger') { S.trigger = c.val == null ? null : c.val / 10; S.contacts.forEach(x => x.trigAlerted = false); const v = c.val; reply('nav', () => v == null ? 'CPA trigger cancelled' : `CPA trigger set, ${cableWords(v / 10)}`); }
     else if (c.k === 'helm') helmOrder(c, (w, txt) => reply(w, () => txt));
     else if (c.k === 'speed') { engineLoop(); S.own.tgtSpd = c.v; const v = c.v; reply('helm', () => `Revolutions for ${v} knots`); }
-    else if (c.k === 'step') { engineLoop(); S.own.tgtSpd = c.dir === 'ahead' ? STEP_KN * c.n : 0; const o = c; reply('helm', () => `Both engines step ${STEP_WORD[o.n]} ${o.dir}`); }
+    else if (c.k === 'step') { engineLoop(); S.own.tgtSpd = c.dir === 'ahead' ? STEP_KN * c.n : 0; S.lastStepAt = performance.now(); const o = c; reply('helm', () => `Both engines step ${STEP_WORD[o.n]} ${o.dir}`); }
+    else if (c.k === 'stepDown') { const n = Math.max(1, Math.round(S.own.tgtSpd / STEP_KN) - 1); engineLoop(); S.own.tgtSpd = STEP_KN * n; S.lastStepAt = performance.now(); reply('helm', () => `Both engines step ${STEP_WORD[n]} ahead`); }
     else if (c.k === 'telegraph') { engineLoop(); S.own.tgtSpd = TELEGRAPH[c.order]; const o = c.order; reply('helm', () => o === 'stop' ? 'Stop both engines. Both engines stopped' : `${o[0].toUpperCase() + o.slice(1)} both. Both engines ${o}`); }
   }
   // replies go after any answers still waiting (so orders are repeated in the order given), ahead of call-ups
@@ -1446,6 +1453,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </script>
 
-<script src="voice.js?v=bvp2"></script>
+<script src="voice.js?v=run5"></script>
 </body>
 </html>
