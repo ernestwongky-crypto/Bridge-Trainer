@@ -201,6 +201,7 @@ td.bad { color: var(--port); }
         <p class="note">Keys stay only in this browser and go only to Deepgram and Anthropic. Set orders are handled instantly; questions and free phrasing go to Claude. Earphones give the cleanest call.</p>
       </div>
       <button id="bStart">Start drill</button>
+      <p class="note" id="savedRuns"></p>
       <p class="note"><b>Voice orders:</b> with Voice call on, just talk. Without it, press Talk (or the space bar on a laptop); Hands-free keeps the mic open and pauses it while the team speaks.</p>
       <p class="note">Contacts are different every run: crossing from either side, head-on or overtaking, some passing clear and some a real risk. Geography is approximate, traced from a public MPA chart, and not for navigation.</p>
     </div>
@@ -618,6 +619,43 @@ const ROLE = { lookout: 'Lookout', nav: 'Nav', helm: 'Helm', co: 'CO', oow: 'OOW
 const TRACE = window.BT_TRACE = [];
 function tr(ev, d) { try { TRACE.push(Object.assign({ ms: Math.round(performance.now()), sim: fmtT(S.t), ev }, d || {})); if (TRACE.length > 4000) TRACE.shift(); } catch (e) { } }
 window.tr = tr;
+/* ---------- saved runs: last 10 runs kept in this browser, one localStorage key per run ('bt_run:<start time>'), read back newest first with window.BT_RUNS() ---------- */
+const RUN_PREFIX = 'bt_run:', RUNS_MAX = 10;
+function runKeys() { try { return Object.keys(localStorage).filter(k => k.startsWith(RUN_PREFIX)).sort().reverse(); } catch (e) { return []; } }
+function loadRuns() { return runKeys().map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }).filter(Boolean); }
+window.BT_RUNS = loadRuns;
+function saveRun(why) {
+  if (!S.startedAt || !S.leg) return;
+  const rec = {
+    id: S.startedAt, started: S.startedAt, saved: new Date().toISOString(), why, finished: !!S.ended,
+    leg: S.leg.id, tod: S.tod, seed: S.seed, plan: S.plan, simTime: fmtT(S.t), maxXteCables: +(S.maxXte * 10).toFixed(2),
+    contacts: S.contacts.concat(S.past || []).filter((c, i, a) => a.indexOf(c) === i && c.firstRb != null && c.minR != null)
+      .map(c => ({ type: c.type, firstRb: Math.round(c.firstRb), cpaCables: +(c.minR * 10).toFixed(2), bcrCables: c.bcrActual != null ? +(c.bcrActual * 10).toFixed(2) : null, at: fmtT(c.minRt) })),
+    log: S.log.slice(), trace: TRACE.slice()
+  };
+  const key = RUN_PREFIX + rec.id;
+  for (;;) {
+    try { localStorage.setItem(key, JSON.stringify(rec)); break; }
+    catch (e) { // storage full: drop the oldest other run; if none is left, keep this run's latest 1500 trace steps
+      const older = runKeys().filter(k => k !== key);
+      if (older.length) { try { localStorage.removeItem(older[older.length - 1]); } catch (e2) { return; } }
+      else if (rec.trace.length > 1500) rec.trace = rec.trace.slice(-1500);
+      else return;
+    }
+  }
+  runKeys().slice(RUNS_MAX).forEach(k => { try { localStorage.removeItem(k); } catch (e) { } });
+  showSavedRuns(rec);
+}
+function showSavedRuns(latest) {
+  const el = document.getElementById('savedRuns'); if (!el) return;
+  const keys = runKeys(); if (!keys.length) { el.textContent = 'No runs saved yet.'; return; }
+  let r = latest; if (!r) try { r = JSON.parse(localStorage.getItem(keys[0])); } catch (e) { return; }
+  const d = new Date(r.started);
+  el.textContent = `${keys.length} run${keys.length > 1 ? 's' : ''} saved in this browser. Latest: ${d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: false })}, leg ${r.leg}, ${r.finished ? 'finished' : 'not finished'}.`;
+}
+setInterval(() => { if (S.running) saveRun('autosave'); }, 15000);
+window.addEventListener('pagehide', () => { if (S.running) saveRun('page_closed'); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.running) saveRun('tab_hidden'); });
 let talking = 0;
 function speak(who, text, cb) {
   addLog(who, text); tr('say', { who, text });
@@ -1282,8 +1320,8 @@ function frame(ts) {
 function setPaused(p) { S.paused = p; $('bPause').textContent = p ? 'Resume' : 'Pause'; $('bPause').setAttribute('aria-pressed', p); if (p && 'speechSynthesis' in window) { } }
 function setScale(s) { S.scale = s; document.querySelectorAll('[data-scale]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.scale === s)); }
 function startDrill() {
-  TRACE.length = 0;
-  S.tod = document.querySelector('input[name=tod]:checked').value;
+  TRACE.length = 0; S.startedAt = new Date().toISOString();
+  S.tod =document.querySelector('input[name=tod]:checked').value;
   S.voiceOut = $('optVoice').checked;
   S.seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
   const sc = buildScenario(S.seed); S.contacts = sc.contacts; S.rand = sc.rand;
@@ -1320,6 +1358,7 @@ function endDrill() {
   $('dbSum').textContent = `Leg ${S.leg.name} · ${fmtT(S.t)} drill time · ${rows.length} contacts reported · furthest off track ${(S.maxXte * 10).toFixed(1)} cables`;
   requestAnimationFrame(() => { const [pc, pw, ph] = fitCanvas($('dbPlot')); drawPlot(pc, pw, ph, true); });
   $('debrief').scrollIntoView({ behavior: 'smooth' });
+  saveRun('ended');
 }
 
 /* ---------- voice in ---------- */
@@ -1364,6 +1403,7 @@ function unmuteMic() { if (micMuted && !talking) { micMuted = false; if (handsFr
 function stopListen() { if (rec && listening) rec.stop(); }
 
 document.addEventListener('DOMContentLoaded', () => {
+  showSavedRuns();
   initMic();
   $('bStart').onclick = startDrill;
   $('await').onclick = () => { if (S.loop && !(phase === 'await' && cur)) { addLog('oow', 'Carry on'); closeLoop(); } };
